@@ -1,8 +1,6 @@
-name: Mutation Test (Nightly)
+name: Mutation Test (Full)
 
 on:
-  schedule:
-    - cron: '0 18 * * *' # JST 03:00
   workflow_dispatch:
 
 permissions:
@@ -66,7 +64,7 @@ jobs:
           uv run mutmut results > mutation-results.txt 2>&1
 
           {
-            echo "## Mutation Test Summary (Nightly Full)"
+            echo "## Mutation Test Summary (Full)"
             echo ""
             echo '```text'
             cat mutation-results.txt

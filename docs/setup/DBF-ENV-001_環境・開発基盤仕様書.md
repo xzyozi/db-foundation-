@@ -106,7 +106,7 @@ GitHub Actions により、`main` および `develop` ブランチへの `push` 
 
 #### ミューテーションテスト（`mutmut` v3）の扱い
 
-- `.github/workflows/mutation-pr.yml`（PR 差分・インクリメンタル実行）および `.github/workflows/mutation-nightly.yml`（毎日 JST 03:00 全件実行）は、**初期段階ではマージ必須の品質ゲート（`QG-xxx`）には含めず、継続的なテスト品質指標（Step Summary / Artifact での可視化）** として運用する。
+- `.github/workflows/mutation-pr.yml`（PR 差分・インクリメンタル実行）および `.github/workflows/mutation-nightly.yml`（`workflow_dispatch` による手動全件実行）は、**初期段階ではマージ必須の品質ゲート（`QG-xxx`）には含めず、継続的なテスト品質指標（Step Summary / Artifact での可視化）** として運用する。
 - `[tool.mutmut]` が有効化され、かつ `uv.lock` が生成された時点（実装フェーズ以降）で自動的に有効化される opt-in 方式とする。詳細は [`docs/setup/mutation_testing_setup.md`](./mutation_testing_setup.md) を参照する。
 
 #### 性能試験（ベンチマーク）の扱い

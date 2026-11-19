@@ -9,7 +9,7 @@ created_at: "2026-11-19"
 updated_at: "2026-11-19"
 author: "Template Maintainer"
 owner: "Template Maintainer"
-purpose: "Pythonプロジェクトにおいて mutmut v3 と GitHub Actions の2段構成（PR差分・Nightly全件）を低ノイズかつ高速に導入・運用する手順を定義するため"
+purpose: "Pythonプロジェクトにおいて mutmut v3 と GitHub Actions の2段構成（PR差分・手動全件）を低ノイズかつ高速に導入・運用する手順を定義するため"
 related_documents:
   - "ドキュメントガバナンス（相対パス: ../README.md）"
   - "用語集（相対パス: ../../CONTEXT.md）"
@@ -19,7 +19,7 @@ related_documents:
 
 # ミューテーションテスト導入・運用ガイド (`mutmut` v3)
 
-本ガイドは、Python プロジェクトのテスト品質を低コストで計測するため、`mutmut` v3 と GitHub Actions（PR 差分実行 ＋ Nightly 全件実行）を導入・運用する標準手順を定義する。
+本ガイドは、Python プロジェクトのテスト品質を低コストで計測するため、`mutmut` v3 と GitHub Actions（PR 差分実行 ＋ 手動全件実行）を導入・運用する標準手順を定義する。
 
 ---
 
@@ -33,7 +33,7 @@ related_documents:
 | **高速テストだけ回す** | `pytest_add_cli_args_test_selection` でユニットテストに限定し、`max_stack_depth` で間接通過テストを除外する |
 | **型エラー変異を事前除外** | `type_check_command` に `mypy`（または `pyrefly`）を指定し、テスト前に無意味なミュータントを間引く |
 | **未カバー行のノイズ削減** | `mutate_only_covered_lines = true` で `coverage.py` が通った行だけを対象化する |
-| **キャッシュと2段実行** | `mutants/` を CI キャッシュで引き継ぎ、PR は差分実行、Nightly は全件計測・可視化に分離する |
+| **キャッシュと2段実行** | `mutants/` を CI キャッシュで引き継ぎ、PR は差分実行、全件計測・可視化は手動（`workflow_dispatch`）に分離する |
 | **初期はゲートにしない** | 初期は Step Summary と Artifact による指標可視化に留め、等価ミュータントで開発を止めない |
 
 ---
@@ -45,7 +45,7 @@ related_documents:
 - `pyproject.toml`: `[dependency-groups]` の `dev` / `mutation` 定義と、コメントアウト済みの `[tool.mutmut]` 雛形
 - `.gitignore`: `mutants/`、`.coverage`、`.coverage.*` の除外設定
 - `.github/workflows/mutation-pr.yml`: PR 向けの差分・インクリメンタル実行ワークフロー（opt-in）
-- `.github/workflows/mutation-nightly.yml`: 毎日 JST 03:00 の全件実行・統計出力ワークフロー（opt-in）
+- `.github/workflows/mutation-nightly.yml`: 全件実行・統計出力ワークフロー（`workflow_dispatch` 手動実行・opt-in）
 
 ### 動作制約
 
@@ -98,12 +98,12 @@ uv sync --dev --group mutation
 - **実行モードの自動切替**:
   - `src/` または `app/` に追加・変更・リネーム（`--diff-filter=ACMR`）がある場合：変更モジュールのみを `module.*` パターンで差分実行（`set -f` でシェル glob 展開を抑止）。
   - ソース変更がなく `tests/` や設定のみ変更された場合：キャッシュを復元して引数なし実行（`mutmut` v3 のインクリメンタル実行）を行い、テスト追加による Survived 解消を検証する。
-- **キャッシュ**: `mutmut-pr-<ref>-<uv.lockハッシュ>-<github.sha>` をキーとし、同一 PR 内の再 push でも最新 `mutants/` を保存する。未ヒット時は `main` の Nightly キャッシュへフォールバックする。
+- **キャッシュ**: `mutmut-pr-<ref>-<uv.lockハッシュ>-<github.sha>` をキーとし、同一 PR 内の再 push でも最新 `mutants/` を保存する。未ヒット時は `main` の全件キャッシュへフォールバックする。
 - **成果物**: GitHub Step Summary に結果一覧を出力し、Artifact（`mutation-pr-report`）へ `mutation-results.txt` と Survived 上位 20 件の差分（`mutation-survived-diffs.txt`）を保存する。
 
-### Nightly CI（`.github/workflows/mutation-nightly.yml`）
+### 全件実行 CI（`.github/workflows/mutation-nightly.yml`）
 
-- **実行契機**: 毎日 UTC 18:00（JST 03:00）および `workflow_dispatch`。
+- **実行契機**: `workflow_dispatch` による手動実行（定周期 `schedule` は無効化）。
 - **処理内容**: 全件実行して `main` キャッシュを最新化し、`mutmut export-cicd-stats` と `mutmut badge --output mutation-score.json` を実行する。
 - **成果物**: Artifact（`mutation-nightly-stats`）へスコア JSON・CI/CD 統計・結果一覧・Survived 上位 50 件の差分を保存する。
 
@@ -113,7 +113,7 @@ uv sync --dev --group mutation
 
 ### 品質ゲートにおける位置づけ
 
-- 環境・開発基盤仕様書（`TEMPLATE_環境・開発基盤仕様書.md` の 4.4 および `DBF-ENV-001`）で品質ゲートを定義する際、ミューテーションテストは **初期段階ではマージ必須のハードゲートに含めず、継続的な品質指標（情報提供 / Nightly 監視）** として扱う。
+- 環境・開発基盤仕様書（`TEMPLATE_環境・開発基盤仕様書.md` の 4.4 および `DBF-ENV-001`）で品質ゲートを定義する際、ミューテーションテストは **初期段階ではマージ必須のハードゲートに含めず、継続的な品質指標（PR での差分可視化 / 手動全件確認）** として扱う。
 - 将来的にゲート化する場合も、全コード一律ではなく重要ドメイン層に限定し、現実的なスコア閾値（例: 75〜85%）を設定する。
 
 ### 等価ミュータントとノイズの扱い
@@ -129,6 +129,6 @@ uv sync --dev --group mutation
 Windows ネイティブ環境では `mutmut` v3 が動作しないため、以下のいずれかで運用する。
 
 1. **CI 出力を AI エージェントへ渡す（推奨・環境構築不要）**
-   - PR CI / Nightly CI が出力した Artifact の `mutation-survived-diffs.txt`（または Step Summary）を取得し、AI エージェントへ渡して「この Survived を検出する境界値テストを追加し、不要な分岐であれば削除する」修正ループを回す。
+   - PR CI / 全件 CI が出力した Artifact の `mutation-survived-diffs.txt`（または Step Summary）を取得し、AI エージェントへ渡して「この Survived を検出する境界値テストを追加し、不要な分岐であれば削除する」修正ループを回す。
 2. **WSL2 / DevContainer でローカル実行する**
    - Linux 環境上で `uv sync --dev --group mutation` を実行し、`uv run mutmut run` / `uv run mutmut results` / `uv run mutmut show <mutant_name>` を直接実行する。
