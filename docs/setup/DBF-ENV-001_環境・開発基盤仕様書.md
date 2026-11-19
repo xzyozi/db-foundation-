@@ -5,7 +5,7 @@ document_number: "DBF-ENV-001"
 document_role: "normative"
 ssot_scope: "environment"
 status: "draft"
-version: "1.1"
+version: "1.2"
 created_at: "2026-11-19"
 updated_at: "2026-11-19"
 author: "xzyozi"
@@ -136,11 +136,7 @@ GitHub Actions により、`main` および `develop` ブランチへの `push` 
 
 ## 6. 例外・適用差異
 
-現時点で解消が予定されているテンプレート初期状態との差異を下表に記録する（Issue #12、Issue #18）。
-
-| ID | 対象 | 標準との差異 | 理由・制約 | 影響 | 代替対応 | 解除条件 |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| EX-001 | `pyproject.toml` のメタデータ | `name = "my-awesome-project"`、`description` がテンプレート初期値のままになっている | 設計書策定を先行し、パッケージ雛形の実装コミットで一括更新する計画のため | 設計書のみの変更PRでは影響なし。パッケージ import 時には名称不一致となる | 設計フェーズでは現状維持とする | 実装フェーズの最初（雛形とビルド設定 Issue #24）で `name = "storage-kernel"` および `src` レイアウトへ更新して解除する |
+現時点で未解消の標準との差異・適用例外はありません（`EX-001` および `EX-002` は解消済み）。
 
 ## 7. 関連文書
 
@@ -165,3 +161,4 @@ GitHub Actions により、`main` および `develop` ブランチへの `push` 
 | :------ | :--------- | :----- | :------------------------------------------------------------- |
 | Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #12 に基づき環境仕様と品質ゲート QG-001〜006 を制定） |
 | Rev.1.1 | 2026-11-19 | xzyozi | `[dependency-groups]`（`dev` / `mutation`）への移行、ミューテーションテスト位置づけ追加、および `.py` 不在時 `mypy` スキップ対応に伴う `EX-002` 解消（Issue #22） |
+| Rev.1.2 | 2026-11-19 | xzyozi | `pyproject.toml` の `storage-kernel` 化・`src` レイアウト設定に伴う `EX-001` 解消（Issue #24） |

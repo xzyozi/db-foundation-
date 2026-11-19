@@ -172,7 +172,8 @@ related_documents:
 | Issue記録  | `ISSUE`             | `issue_record`                 |      不要       | Issueの写し        |
 | 環境仕様   | `ENV`               | `environment_specification`    |      必須       | 環境・開発基盤仕様 |
 | 環境手順   | `SETUP`             | `environment_setup_procedure`  |      任意       | 環境構築手順       |
-| その他候補 | `REQ` / `AN` / `RV` | 対応する種別を追加             |  必要に応じる   | 必要時に登録       |
+| 分析       | `AN`                | `analysis`                     |      任意       | 調査・分析・構想   |
+| その他候補 | `REQ` / `RV`        | 対応する種別を追加             |  必要に応じる   | 必要時に登録       |
 
 #### 形式文書の命名
 

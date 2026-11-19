@@ -107,6 +107,75 @@
 - 文書種別、役割、SSOT範囲、状態、版数、責任者、関連文書を記録する。
 - Frontmatterを文書属性の正本とし、本文のメタデータ表は視認性のための表示とする。
 
+## storage_kernel ドメイン用語
+
+### Envelope（RecordEnvelope / 封筒）
+
+**定義**: `storage_kernel` がレコードの中身（ドメイン構造）に依存せずに扱うための、メタデータ付き不変データ構造。
+
+**構成と使い分け**:
+
+- `partition_key`、`seq`、`idempotency_key`、`record_type`、`schema_version`、`payload_hash`、`payload`、`created_at`、`covers_through_seq` を保持する。
+- 境界契約の正本は IF/API仕様書（`DBF-IF-001`）、永続化される論理構造はデータ構造仕様書（`DBF-DS-001`）で定義する。
+
+### Partition と Shard（パーティションとシャード）
+
+**定義**: `Partition` は `partition_key` で識別される論理的なイベント列の単位（`seq` と `idempotency_key` のスコープ）。`Shard` は複数のパーティションを物理的に格納する分割先ストレージ単位（`shard_id`）。
+
+**使い分け**:
+
+- 1つの Partition は常に1つの Shard へ `bind_shard` で割り当てられる（v1 では不変）。
+- 論理構造やステータス（`active` / `read_only`）はデータ構造仕様書（`DBF-DS-001`）と IF/API仕様書（`DBF-IF-001`）で管理し、物理ファイル配置は親プロジェクトの DAO に委譲する。
+
+### Projection（プロジェクション / 非同期投影）
+
+**定義**: シャード上のイミュータブル・レコードを購読し、全文検索インデックスや集計ビューなどの参照特化ストアへ非同期に反映する仕組み（`ProjectionPort`）。
+
+**使い分け**:
+
+- At-Least-Once で配信されるため、`apply_batch` は `(partition_key, seq)` 単位で冪等に実装する。
+- 取りこぼしを許容する低遅延通知（`subscribe`: At-Most-Once）とは別レーンとして区別する。
+
+### Cursor（カーソル）
+
+**定義**: 各 Consumer（Projection または同期クライアント）が、あるパーティションのどの `seq` まで処理・取得済みかを示す位置情報。
+
+**ルール**:
+
+- `MetaDAOPort` で管理される Projection カーソルは `(consumer_id, partition_key)` 単位で単調非減少（`MAX(current, seq)`）とし、後退させない。
+
+### Dirty Set（ダーティセット）
+
+**定義**: インメモリ Event Bus の通知キュー溢れや起動直後など、Fast Path での通知漏れ・追いつきが必要になった `partition_key` を記録するプロセス内メモリ集合。
+
+**使い分け**:
+
+- 正本ではなく再追いつきのトリガーとして使い、`ProjectionRunner` が `ShardDAOPort.fetch_range` を通じて欠落なくリカバリするために用いる。
+
+### Durability（耐久性レベル）
+
+**定義**: `write_transaction` の COMMIT 完了をもって DAO が保証する永続化の水準（`none` / `process_crash` / `power_loss`）。
+
+**使い分け**:
+
+- 本番既定および SQLite 参照実装は `power_loss`（電源断耐性）、In-Memory テスト実装は `none` とし、親プロジェクトの自己申告により起動時に判別する。
+
+### Poison Pill（ポイズンピル）
+
+**定義**: `ProjectionPort.apply_batch` において `RetryPolicy` の上限回数まで再試行しても適用に失敗し続ける、単一の原因レコード。
+
+**使い分け**:
+
+- バッチ全体が失敗した際、1件ずつ再実行して原因レコード1件だけを特定し、`dlq_and_skip`（Dead Letter Queue 隔離）または `pause_partition`（該当パーティションの投影一時停止）で正常レコードと切り離す。
+
+### Upcast（アップキャスト）
+
+**定義**: 保存済みの旧 `schema_version` のペイロードバイト列を、保存データを書き換えることなく読み取り時に1版ずつ最新版へ変換する仕組み（`PayloadUpcaster`）。
+
+**対象外**:
+
+- 新しい版から古い版への逆変換（Downcast）および保存済み `payload_hash` の再計算は行わない。
+
 ## 用語追加・変更の手順
 
 1. 同じ概念を表す既存用語がないか確認する。
