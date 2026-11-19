@@ -57,7 +57,7 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 リポジトリのルートディレクトリで以下のコマンドを実行します。`.venv` の作成と開発用依存パッケージのインストールが自動的に行われます。
 
 ```bash
-uv sync --extra dev
+uv sync --dev
 ```
 
 実行後、`uv.lock` が生成・更新されます。**`uv.lock` は依存関係の完全な再現性を保つため、必ず Git にコミットしてください**。

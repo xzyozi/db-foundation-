@@ -17,6 +17,7 @@ related_documents:
   - "ドキュメント検証スクリプト運用（相対パス: ./doc_validation.md）"
   - "Mermaid CI 検証運用（相対パス: ./mermaid_ci_validation.md）"
   - "Git Flow 運用規約 ＆ ブランチ自動管理ガイド（相対パス: ./git_flow_and_branch_policy.md）"
+  - "ミューテーションテスト導入・運用ガイド（相対パス: ./mutation_testing_setup.md）"
   - "ADR-002 DAO委譲とPython標準ライブラリによる独立カーネル構成（相対パス: ../adr/ADR-002_DAO委譲とPython標準ライブラリによる独立カーネル構成.md）"
   - "DBF-BD-001 基本設計書（相対パス: ../design/DBF-BD-001_基本設計書.md）"
 ---
@@ -69,10 +70,13 @@ related_documents:
 
 - **パッケージ・仮想環境管理**: `uv` を使用する。依存解決結果は `uv.lock` で管理する。
 - **本番実行時依存（`dependencies`）**: なし（Python 標準ライブラリのみ）。
-- **開発・検証専用依存（`[project.optional-dependencies] dev`）**:
+- **開発・検証専用依存（`[dependency-groups] dev`）**:
   - `pytest >= 8.0.0`: テストランナー（`unittest` ベースのテストおよび Contract Test の実行にも使用）。
+  - `pytest-cov >= 5.0.0`: カバレッジ計測およびミューテーションテスト時の対象行絞り込み（`mutate_only_covered_lines`）に使用。
   - `ruff >= 0.4.0`: Linter および Formatter（`line-length = 120`、ルール `E`, `F`, `W`, `I`）。
   - `mypy >= 1.0.0`: 静的型チェッカー（`python_version = "3.10"`、strict 相当設定）。
+- **ミューテーションテスト専用依存（`[dependency-groups] mutation`、Linux / CI 専用）**:
+  - `mutmut >= 3.0.0`: テスト品質検証用のミューテーションテストツール（`os.fork` 依存のため Linux / WSL2 / CI で `uv sync --dev --group mutation` により導入）。
 - **ドキュメント検証ツール**:
   - `.github/scripts/validate_docs.py`: Python 標準ライブラリのみで動作する Frontmatter・リンク・コードフェンス検証スクリプト。
   - `@mermaid-js/mermaid-cli@11.4.2`: CI（`.github/workflows/validate-mermaid.yml`）上で Mermaid 図を SVG レンダリング検証するための CLI。
@@ -100,6 +104,11 @@ GitHub Actions により、`main` および `develop` ブランチへの `push` 
 | QG-005 | ドキュメント規約検証 | `python .github/scripts/validate_docs.py docs README.md`（`.github/workflows/validate-docs.yml`） | `docs/**/*.md` または `README.md` の変更時 | エラーが 0 件（終了コード `0`）であること |
 | QG-006 | Mermaid 図レンダリング検証 | `node .github/scripts/validateMermaidMarkdown.mjs`（`.github/workflows/validate-mermaid.yml`） | `docs/**/*.md` または `README.md` の変更時 | 変更された全 Mermaid コードブロックが構文エラーなく SVG にレンダリングできること |
 
+#### ミューテーションテスト（`mutmut` v3）の扱い
+
+- `.github/workflows/mutation-pr.yml`（PR 差分・インクリメンタル実行）および `.github/workflows/mutation-nightly.yml`（毎日 JST 03:00 全件実行）は、**初期段階ではマージ必須の品質ゲート（`QG-xxx`）には含めず、継続的なテスト品質指標（Step Summary / Artifact での可視化）** として運用する。
+- `[tool.mutmut]` が有効化され、かつ `uv.lock` が生成された時点（実装フェーズ以降）で自動的に有効化される opt-in 方式とする。詳細は [`docs/setup/mutation_testing_setup.md`](./mutation_testing_setup.md) を参照する。
+
 #### 性能試験（ベンチマーク）の扱い
 
 - Issue #7 で定義する大規模性能試験（1パーティション 10,000 / 100,000 / 300,000 件の連続書き込み、100パーティション分散書き込み、カーソル 0 からの全件再生、プロセス再起動後の再生）は、実行環境のディスク I/O（`fsync`）性能に強く左右されるため、**通常の CI の必須合否判定（品質ゲート）には含めない**（Issue #7）。
@@ -122,7 +131,7 @@ GitHub Actions により、`main` および `develop` ブランチへの `push` 
 | :--- | :--- | :--- | :--- |
 | ドキュメントメタデータ・リンク整合性 | `python3 .github/scripts/validate_docs.py docs README.md` を実行する | `エラー 0 件` が表示され終了コード `0` で完了すること | CI ジョブ `Validate docs` の実行ログ |
 | Mermaid 図の構文・描画妥当性 | CI 上で `validateMermaidMarkdown.mjs` を実行する | 対象 Markdown 内の全 Mermaid 図がエラーなく変換されること | CI ジョブ `Validate Mermaid diagrams` の実行ログ |
-| Python 静的解析・型検査・単体/契約テスト | `uv sync --extra dev` 後、`QG-001`〜`QG-004` の各コマンドを実行する | 全コマンドが終了コード `0` で完了すること | CI ジョブ `Python Checks` の実行ログ |
+| Python 静的解析・型検査・単体/契約テスト | `uv sync --dev` 後、`QG-001`〜`QG-004` の各コマンドを実行する | 全コマンドが終了コード `0` で完了すること | CI ジョブ `Python Checks` の実行ログ |
 | 親プロジェクト DAO の契約適合性 | 親プロジェクト側で `ShardDAOContractTest` を継承したテストクラスを `unittest` または `pytest` で実行する | 13項目の Contract Test がすべてパスすること | 親プロジェクトのテスト実行ログ |
 
 ## 6. 例外・適用差異
