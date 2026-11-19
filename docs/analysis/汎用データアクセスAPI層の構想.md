@@ -4,7 +4,7 @@ document_type: "analysis"
 document_role: "rationale"
 ssot_scope: "system_architecture（構想段階の判断材料）"
 status: "draft"
-version: "0.1"
+version: "0.2"
 created_at: "2026-11-19"
 updated_at: "2026-11-19"
 author: "xzyozi"
@@ -13,6 +13,7 @@ purpose: "アプリケーション本体と物理DB群の間に汎用データ�
 related_documents:
   - "ドキュメントガバナンス（相対パス: ../README.md）"
   - "用語集（相対パス: ../../CONTEXT.md）"
+  - "storage_kernel サブモジュール構成案（相対パス: ./storage_kernelサブモジュール構成案.md）"
 ---
 
 # 汎用データアクセスAPI層（Storage & Sync Engine API）の構想
@@ -22,6 +23,7 @@ related_documents:
 このAPI層に先行のシステム設計のエッセンスを汎用化して組み込むことで、アプリケーション側のモジュールは「DBの分割数」「ロック競合」「再送による重複」「オフラインからの復旧」「非同期インデックス更新」を意識せず、統一されたメソッドを呼ぶだけで済むようになる。
 
 > 本文書は構想段階の分析資料であり、現在の仕様の正本ではない。採用が決まった時点で、基本設計書（BD）・データ構造仕様書（DS）などの正本へ反映する。
+> 壁打ちで決めた v1 の範囲は「5. 壁打ちによる決定」にまとめた。第 3 章のプロトタイプと決定が異なる点は 5.5 を参照する。
 
 ---
 
@@ -71,15 +73,15 @@ related_documents:
 
 ### API層が引き受ける7つの汎用機能（先行設計図との対応）
 
-| API層コンポーネント | 汎用化された責務 | 元設計図の対応 |
-| --- | --- | --- |
-| **1. Idempotency Guard** | 呼び出し元が渡す `idempotency_key`（UUID等）で重複書き込みを検知し、二重登録を防ぎつつ既存の確定結果を返す。 | Section D (Idempotency) |
-| **2. Partition Router** | データの論理単位である `partition_key`（例: `chat:123`, `job:abc`, `user:42`）から保存先のシャードDBを解決する。高負荷パーティションの専用DB隔離も可能。 | Section O-1 (Partitioning) |
-| **3. Monotonic Sequencer** | 端末の時計ズレ（Clock Skew）を排除するため、API層がパーティション単位の厳密な単調増加連番 `seq` を採番する。 | Section D & O-2 (Ordering) |
-| **4. Write-Before-ACK** | 対象シャードへの `COMMIT` 完了を保証してから呼び出し元へACK（確定 `seq`）を返し、その後にイベントバスへ流す。 | Section H & O-3 (Durability) |
-| **5. Internal Event Bus** | 確定した書き込みイベントをメモリ上のPub/Subで配信。検索DBの更新、集計ビュー作成、UI通知などを本体処理から切り離す。 | Section F, L, M (Event Bus) |
-| **6. Ephemeral Store** | 生存確認（Heartbeat）、一時ロック、進捗率などの「消えてもよい高頻度データ」をTTL付きメモリ辞書で捌き、ディスクDBを保護する。 | Section I & O-6 (Ephemeral) |
-| **7. Cursor Sync Engine** | モジュールやクライアントが保持する `{partition_key: last_seen_seq}` を受け取り、複数シャードを横断して未処理差分を一括返却する。 | Section J (Offline Sync) |
+| API層コンポーネント        | 汎用化された責務                                                                                                                                         | 元設計図の対応               |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| **1. Idempotency Guard**   | 呼び出し元が渡す `idempotency_key`（UUID等）で重複書き込みを検知し、二重登録を防ぎつつ既存の確定結果を返す。                                             | Section D (Idempotency)      |
+| **2. Partition Router**    | データの論理単位である `partition_key`（例: `chat:123`, `job:abc`, `user:42`）から保存先のシャードDBを解決する。高負荷パーティションの専用DB隔離も可能。 | Section O-1 (Partitioning)   |
+| **3. Monotonic Sequencer** | 端末の時計ズレ（Clock Skew）を排除するため、API層がパーティション単位の厳密な単調増加連番 `seq` を採番する。                                             | Section D & O-2 (Ordering)   |
+| **4. Write-Before-ACK**    | 対象シャードへの `COMMIT` 完了を保証してから呼び出し元へACK（確定 `seq`）を返し、その後にイベントバスへ流す。                                            | Section H & O-3 (Durability) |
+| **5. Internal Event Bus**  | 確定した書き込みイベントをメモリ上のPub/Subで配信。検索DBの更新、集計ビュー作成、UI通知などを本体処理から切り離す。                                      | Section F, L, M (Event Bus)  |
+| **6. Ephemeral Store**     | 生存確認（Heartbeat）、一時ロック、進捗率などの「消えてもよい高頻度データ」をTTL付きメモリ辞書で捌き、ディスクDBを保護する。                             | Section I & O-6 (Ephemeral)  |
+| **7. Cursor Sync Engine**  | モジュールやクライアントが保持する `{partition_key: last_seen_seq}` を受け取り、複数シャードを横断して未処理差分を一括返却する。                         | Section J (Offline Sync)     |
 
 ---
 
@@ -506,6 +508,71 @@ class UniversalStorageAPI:
 
 ---
 
-## 5. 未決事項
+## 5. 壁打ちによる決定（v1 の範囲）
 
-- 想定用途（複数モジュールが協調するローカルアプリ、ストリーミングデータの収集・分析基盤、別言語からのIPC利用など）が未確定である。用途に応じてBD/DSでの方針を決める。
+本文書の構想について、Issue #1〜#4・#6 で論点を決めた（全体のまとめは Issue #5）。v1 の Protocol 定義案と公開 API は [storage_kernel サブモジュール構成案](./storage_kernelサブモジュール構成案.md) の第 3 章を正とする。本文書の第 1〜4 章は、検討の出発点として残す。
+
+### 5.1 前提とスコープ（#1・#6）
+
+| 項目                   | 決定                                                                                                                                   |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 想定用途               | 単一マシン上で、複数モジュールが協調するローカルアプリ。ストリーミング収集と別言語からの IPC 利用は v2 以降                            |
+| プロセスモデル         | 単一プロセス（マルチスレッド）。別プロセスから DB へ直接書き込まないことは親プロジェクトが守る制約                                     |
+| 規模（暫定）           | 定常 10〜50 writes/sec、バースト 500〜1,000 writes/sec、パーティション 10〜1,000、1 パーティション数十万件。性能試験で確認する         |
+| ペイロード             | 上限 64 KB。超えたら `PayloadTooLarge` で拒否する                                                                                      |
+| 書き込み API           | `append()` のみ。`append_batch()` は必要になったら `ports/` を変えずに追加し、原子性は同一パーティション内に限る                       |
+| ストレージ             | DAO（テーブル構造・SQL・ドライバー）は親プロジェクトへ委譲する。基盤は In-Memory 実装と SQLite 参照実装（`contrib/sqlite/`）を同梱する |
+| 言語・依存・ライセンス | Python（`>=3.10`）、標準ライブラリのみ、Apache-2.0。FFI 構成は採らない                                                                 |
+
+外部ブローカー型 OSS（NATS JetStream など）は、ストレージ実装を内部に抱えるため「DAO の自由度」という必須要件と合わず、採用しない。
+
+### 5.2 整合性・耐久性（#2）
+
+| 項目          | 決定                                                                                                                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ACK の意味    | DAO の `write_transaction` が正常に抜けたことを、宣言した `durability`（`none` / `process_crash` / `power_loss`）で永続化確定とみなす。既定と参照実装は `power_loss`（`synchronous=FULL`） |
+| 取りこぼし    | シャードとカーソルが Source of Truth。Event Bus は Fast Path。キュー溢れは Dirty Set に記録し、`fetch_range` で追いつく                                                                    |
+| Projection    | At-Least-Once。`apply_batch` は `(partition_key, seq)` で冪等。カーソルは適用成功後にだけ進める                                                                                            |
+| meta と shard | 2PC は使わない。`bind_shard` を先に確定し、書き込みはその後。空パーティションは許容し、孤児データは禁止する                                                                                |
+| 冪等キー      | スコープは `(partition_key, idempotency_key)`。`payload_hash` が不一致なら `IdempotencyConflict`                                                                                           |
+
+### 5.3 API・Port 契約（#3）
+
+| 項目                  | 決定                                                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| パーティション状態    | v1 は `active` / `read_only` のみ。パーティション移動（`migrating`）は v2                                                 |
+| 購読パターン          | 完全一致、`*`、末尾ワイルドカード（`chat:*`）                                                                             |
+| `subscribe`           | at-most-once。購読者ごとの有界キューと `drop_policy`                                                                      |
+| `register_projection` | at-least-once。リトライ後、Poison Pill を 1 件ずつ特定し、DLQ に隔離するか、パーティションを一時停止する                  |
+| 停止                  | `close()` で新規書き込みを拒否し、進行中の書き込みを待つ。Projection の残キューは既定で捨てる（カーソルで追いつけるため） |
+
+### 5.4 運用（#4）
+
+| 項目             | 決定                                                                                                                 |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------- |
+| スナップショット | `__snapshot__` を予約種別にする。v1 は親による手動の `write_snapshot` のみ。既定では購読者と Projection に配信しない |
+| Retention        | v2。v1 は `CursorExpiredError` を契約として定義するだけ（送出しない）                                                |
+| バックアップ     | メンテナンスモード（`enter_maintenance` / `exit_maintenance`）で整合点を作り、ファイルのコピーは親の DAO が行う      |
+| スキーマ移行     | 読み取り時の Upcast（バイト列で 1 版ずつ）。`payload_hash` は保存時の元データで計算し、再計算しない                  |
+
+### 5.5 第 3 章のプロトタイプから変わる点
+
+第 3 章のプロトタイプは検討用の実装例であり、次の点は決定と異なる。v1 の実装では決定に従う。
+
+| プロトタイプの実装                                          | 決定                                                                                 | Issue |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----- |
+| SQLite を基盤の内部で直接操作する                           | DAO を親へ委譲し、基盤は `ports/` 経由でだけ操作する                                 | #1 A4 |
+| `synchronous=NORMAL`                                        | 参照実装は `synchronous=FULL`（`power_loss`）。`durability` を宣言する               | #2 B1 |
+| `queue.Full` を黙って捨てる                                 | Dirty Set に記録し、`fetch_range` で追いつく                                         | #2 B2 |
+| FTS への投影が冪等でない（再生で重複する）                  | `(partition_key, seq)` で冪等にし、Projection 用のカーソルを持つ                     | #2 B3 |
+| 同じ冪等キーで payload が違っても `duplicate` を返す        | `payload_hash` を比べ、不一致なら `IdempotencyConflict`                              | #2 B5 |
+| `dedicated_shard` は登録済みのパーティションに効かない      | 初回の割り当てヒント（`preferred_shard`）として扱う。移動は v2                       | #3 C1 |
+| `subscribe` は完全一致と `*` のみ                           | 末尾ワイルドカードを追加する                                                         | #3 C2 |
+| 購読者の例外を握りつぶし、全購読者を 1 スレッドで直列に呼ぶ | 例外はログ・telemetry・`on_error` に通知する。購読者ごとに有界キューを持つ           | #3 C3 |
+| `close()` が未処理のキューを捨てる                          | 書き込みを拒否してから、進行中の処理を待って停止する。結果を `ShutdownReport` で返す | #3 C4 |
+| `partitions.status` がコードにない                          | `PartitionStatus`（`active` / `read_only`）を契約に入れる                            | #3 C5 |
+
+### 5.6 次の作業
+
+- 性能試験: `synchronous=FULL` での書き込み速度と、全件再生時間を計測する（#1 A3・#6）
+- 基本設計書（BD）・データ構造仕様書（DS）・IF/API 仕様書（IF）の草案を作る
