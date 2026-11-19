@@ -4,7 +4,7 @@ document_type: "analysis"
 document_role: "rationale"
 ssot_scope: "system_architecture（構想段階の判断材料）"
 status: "draft"
-version: "0.1"
+version: "0.2"
 created_at: "2026-11-19"
 updated_at: "2026-11-19"
 author: "xzyozi"
@@ -84,13 +84,13 @@ storage_kernel/                  # Gitサブモジュールルート
 
 `core/`・`runtime/` は親プロジェクトに依存せず、親プロジェクトも `core/`・`runtime/` の内部に依存しない（公開Facadeのみ利用する）。
 
-| ディレクトリ | 責務 | 関知しないこと（境界） |
-| --- | --- | --- |
-| **`contracts/`** | 基盤と親がやり取りする最小のデータ構造（`partition_key`, `seq`, `idempotency_key`, `schema_version`, `payload: T`）と例外体系を定義する。 | ドメイン固有のフィールド、DBのカラム型、SQLエラーコード。 |
-| **`ports/`** | 親プロジェクトが実装すべき抽象インターフェース（Protocol / Trait）を定義する。基盤側が必要とする **原子性（トランザクション）と順序の要件** をメソッド契約として明文化する。 | 実際のストレージ製品（SQLite / PostgreSQL / DuckDB / ファイル等）やテーブル設計。 |
-| **`core/`** | 冪等性制御、Write-Before-ACK、シャード横断のScatter-Gather同期、Projectionの欠落リカバリ、DLQ、揮発TTL管理などの **制御フロー** を担う。 | 物理DBへの接続方法、SQL文、ネットワークプロトコルの詳細。 |
-| **`runtime/`** | シャード単位の排他制御（Writerロック）、定期メンテナンスのフック、終了時のグレースフルドレインを管理する。 | OS固有のデーモン管理や親アプリのイベントループ詳細。 |
-| **`testing/`** | 親プロジェクトが独自DAOを実装した際、「重複排除が壊れていないか」「連番が飛んだり逆転しないか」を自動検証する契約テスト（Contract Test）を提供する。 | 親プロジェクト固有のビジネス要件テスト。 |
+| ディレクトリ     | 責務                                                                                                                                                                         | 関知しないこと（境界）                                                            |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| **`contracts/`** | 基盤と親がやり取りする最小のデータ構造（`partition_key`, `seq`, `idempotency_key`, `schema_version`, `payload: T`）と例外体系を定義する。                                    | ドメイン固有のフィールド、DBのカラム型、SQLエラーコード。                         |
+| **`ports/`**     | 親プロジェクトが実装すべき抽象インターフェース（Protocol / Trait）を定義する。基盤側が必要とする **原子性（トランザクション）と順序の要件** をメソッド契約として明文化する。 | 実際のストレージ製品（SQLite / PostgreSQL / DuckDB / ファイル等）やテーブル設計。 |
+| **`core/`**      | 冪等性制御、Write-Before-ACK、シャード横断のScatter-Gather同期、Projectionの欠落リカバリ、DLQ、揮発TTL管理などの **制御フロー** を担う。                                     | 物理DBへの接続方法、SQL文、ネットワークプロトコルの詳細。                         |
+| **`runtime/`**   | シャード単位の排他制御（Writerロック）、定期メンテナンスのフック、終了時のグレースフルドレインを管理する。                                                                   | OS固有のデーモン管理や親アプリのイベントループ詳細。                              |
+| **`testing/`**   | 親プロジェクトが独自DAOを実装した際、「重複排除が壊れていないか」「連番が飛んだり逆転しないか」を自動検証する契約テスト（Contract Test）を提供する。                         | 親プロジェクト固有のビジネス要件テスト。                                          |
 
 ---
 
@@ -98,35 +98,212 @@ storage_kernel/                  # Gitサブモジュールルート
 
 DAOを親側へ完全に逃がす際、最も事故が起きやすいのは **トランザクション境界** である。「重複チェック → 連番採番 → 書き込み」は同一シャード内で原子的（Atomic）に行う必要があるため、基盤側は **Unit of Work（トランザクション・コンテキスト）** または **アトミックな単一プリミティブ** を Port として要求する。
 
+以下は v1 の定義案である。決定の根拠は Issue #1（前提・スコープ）、#2（整合性・耐久性）、#3（API・Port 契約）を参照する。v1 に含めないもの（パーティション移動、`migrating` 状態、`BlobStorePort`、`PayloadUpcaster`）は 3.6 にまとめる。
+
+### 3.1 `contracts/envelope.py`
+
 ```python
 from __future__ import annotations
-from contextlib import AbstractContextManager
-from typing import Generic, Protocol, Sequence, TypeVar
 
-from ..contracts.envelope import RecordEnvelope, WriteCommitResult
+from dataclasses import dataclass
+from typing import Generic, Literal, Protocol, TypeVar
+
+T = TypeVar("T")
+
+DurabilityLevel = Literal["none", "process_crash", "power_loss"]  # #2 B1
+PartitionStatus = Literal["active", "read_only"]  # #3 C5（v2 で "migrating" を追加）
+DropPolicy = Literal["drop_newest", "drop_oldest", "disconnect"]  # #3 C3
+ProjectionFailurePolicy = Literal["dlq_and_skip", "pause_partition"]  # #3 C3
+
+
+@dataclass(frozen=True)
+class PartitionInfo:
+    partition_key: str
+    shard_id: str
+    status: PartitionStatus
+    created_at: float
+
+
+@dataclass(frozen=True)
+class RecordEnvelope(Generic[T]):
+    partition_key: str
+    seq: int
+    idempotency_key: str
+    record_type: str
+    schema_version: int
+    payload_hash: str  # core/ingestion が算出（#2 B5）
+    payload: T
+    created_at: float
+
+
+@dataclass(frozen=True)
+class WriteAck(Generic[T]):
+    status: Literal["committed", "duplicate"]
+    shard_id: str
+    envelope: RecordEnvelope[T]
+
+
+@dataclass(frozen=True)
+class DeadLetterRecord(Generic[T]):
+    consumer_id: str
+    envelope: RecordEnvelope[T]
+    error_type: str
+    error_message: str
+    attempts: int
+    failed_at: float
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    max_attempts: int = 3
+    initial_delay_sec: float = 0.1
+    backoff_multiplier: float = 2.0
+    max_delay_sec: float = 5.0
+
+
+@dataclass(frozen=True)
+class ShutdownReport:
+    completed_cleanly: bool
+    dropped_subscriber_events: int
+    pending_projection_partitions: tuple[str, ...]
+    elapsed_sec: float
+
+
+class SubscriptionHandle(Protocol):
+    """subscribe() が返す購読管理ハンドル。基盤が実装し、親は利用するだけ"""
+
+    @property
+    def subscription_id(self) -> str: ...
+
+    @property
+    def is_active(self) -> bool: ...
+
+    @property
+    def dropped_count(self) -> int: ...
+
+    def unsubscribe(self) -> None: ...
+```
+
+### 3.2 `contracts/errors.py`
+
+```python
+from __future__ import annotations
+
+from typing import Literal
+
+
+class StorageKernelError(Exception):
+    """storage_kernel 基盤の基底例外"""
+
+
+class KernelClosedError(StorageKernelError):
+    """close() 開始後に書き込みなどが呼ばれた（#3 C4）"""
+
+
+class PayloadTooLarge(StorageKernelError):
+    """encode 後のペイロードが上限（64 KB）を超えた（#1 A3）"""
+
+    def __init__(self, size: int, limit: int) -> None:
+        super().__init__(f"payload size {size} exceeds limit {limit}")
+        self.size = size
+        self.limit = limit
+
+
+class DuplicateKeyError(StorageKernelError):
+    """DAO が DB 固有の一意制約違反を変換して送出する標準例外（#2 B5）"""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: Literal["sequence", "idempotency_key", "unknown"] = "unknown",
+    ) -> None:
+        super().__init__(message)
+        self.kind = kind
+
+
+class IdempotencyConflict(StorageKernelError):
+    """同じ (partition_key, idempotency_key) で payload_hash が一致しない（#2 B5）"""
+
+    def __init__(
+        self,
+        partition_key: str,
+        idempotency_key: str,
+        existing_hash: str,
+        incoming_hash: str,
+    ) -> None:
+        super().__init__(
+            f"Idempotency conflict on ({partition_key}, {idempotency_key}): "
+            f"existing={existing_hash} incoming={incoming_hash}"
+        )
+        self.partition_key = partition_key
+        self.idempotency_key = idempotency_key
+        self.existing_hash = existing_hash
+        self.incoming_hash = incoming_hash
+
+
+class PartitionReadOnlyError(StorageKernelError):
+    """status='read_only' のパーティションへ書き込んだ（#3 C5）"""
+
+
+class PartitionStateConflictError(StorageKernelError):
+    """set_partition_status の expected_status が現在の状態と一致しない（#3 C5）"""
+```
+
+### 3.3 `ports/dao.py`
+
+```python
+from __future__ import annotations
+
+from contextlib import AbstractContextManager
+from typing import Protocol, Sequence, TypeVar
+
+from ..contracts.envelope import (
+    DeadLetterRecord,
+    DurabilityLevel,
+    PartitionInfo,
+    PartitionStatus,
+    RecordEnvelope,
+)
 
 T = TypeVar("T")
 
 
 class ShardTxPort(Protocol[T]):
-    """単一シャード内のトランザクションで親側DAOが提供すべき最小操作"""
+    """単一シャード内の排他書き込みトランザクションの契約"""
 
     def find_by_idempotency(
         self, partition_key: str, idempotency_key: str
-    ) -> RecordEnvelope[T] | None: ...
+    ) -> RecordEnvelope[T] | None:
+        """payload_hash を含む完全な RecordEnvelope を返す"""
+        ...
 
-    def next_sequence(self, partition_key: str) -> int: ...
+    def next_sequence(self, partition_key: str) -> int:
+        """パーティション単位の単調増加 seq を採番する（初回は 1）"""
+        ...
 
-    def insert_record(self, envelope: RecordEnvelope[T]) -> None: ...
+    def insert_record(self, envelope: RecordEnvelope[T]) -> None:
+        """
+        レコードを永続化する。
+        (partition_key, seq) / (partition_key, idempotency_key) の一意制約違反は、
+        DB 固有の例外を漏らさず DuplicateKeyError に変換して送出する。
+        """
+        ...
 
 
 class ShardDAOPort(Protocol[T]):
-    """親プロジェクトが要件に合わせて実装するシャードDAOインターフェース"""
+    """シャードストレージの契約"""
 
-    def write_transaction(
-        self, shard_id: str
-    ) -> AbstractContextManager[ShardTxPort[T]]:
-        """対象シャードの排他書き込みトランザクションを開始・COMMIT/ROLLBACKする"""
+    @property
+    def durability(self) -> DurabilityLevel:
+        """自己申告の耐久性レベル（参照実装は 'power_loss'、In-Memory は 'none'）"""
+        ...
+
+    def write_transaction(self, shard_id: str) -> AbstractContextManager[ShardTxPort[T]]:
+        """
+        正常終了時に COMMIT、例外時に ROLLBACK する。
+        正常に抜けたことは、宣言した durability の水準で永続化が確定したことを意味する。
+        """
         ...
 
     def fetch_range(
@@ -136,29 +313,127 @@ class ShardDAOPort(Protocol[T]):
         after_seq: int,
         limit: int,
     ) -> Sequence[RecordEnvelope[T]]:
-        """seq > after_seq を昇順で取得（Cursor Sync / Projection復旧で使用）"""
+        """seq > after_seq を厳密な昇順で、欠落なく返す"""
         ...
 
 
 class MetaDAOPort(Protocol):
-    """パーティション→シャード対応表と、Consumerカーソル管理のDAOインターフェース"""
+    """パーティション台帳とカーソル管理の契約"""
 
-    def get_shard_id(self, partition_key: str) -> str | None: ...
-    def bind_shard(self, partition_key: str, shard_id: str) -> str: ...
-    def get_cursor(self, consumer_id: str, partition_key: str) -> int: ...
-    def advance_cursor(self, consumer_id: str, partition_key: str, seq: int) -> None: ...
+    @property
+    def durability(self) -> DurabilityLevel: ...
+
+    def get_partition(self, partition_key: str) -> PartitionInfo | None: ...
+
+    def bind_shard(self, partition_key: str, shard_id: str) -> PartitionInfo:
+        """
+        未登録なら status='active' で登録する。
+        登録済みなら上書きせず、既存の PartitionInfo を返す（冪等かつ不変。#2 B4）。
+        """
+        ...
+
+    def set_partition_status(
+        self,
+        partition_key: str,
+        status: PartitionStatus,
+        *,
+        expected_status: PartitionStatus | None = None,
+    ) -> PartitionInfo:
+        """
+        状態を遷移させる。
+        expected_status を指定し、現在の状態と異なれば PartitionStateConflictError を送出する。
+        """
+        ...
+
+    def list_partitions(self, *, status: PartitionStatus | None = None) -> Sequence[PartitionInfo]:
+        """登録済みパーティションの一覧（ProjectionRunner の起動時キャッチアップに使う）"""
+        ...
+
+    def get_cursor(self, consumer_id: str, partition_key: str) -> int:
+        """未記録なら 0 を返す"""
+        ...
+
+    def advance_cursor(self, consumer_id: str, partition_key: str, seq: int) -> None:
+        """単調非減少（MAX(current, seq)）で更新する。後退させてはならない"""
+        ...
 
 
 class ProjectionPort(Protocol[T]):
-    """検索インデックスや集計ビューなど、親側が自由に増設できる非同期プロジェクション口"""
+    """取りこぼしてはいけない非同期投影（At-Least-Once）の契約"""
 
     @property
     def consumer_id(self) -> str: ...
 
     def apply_batch(self, records: Sequence[RecordEnvelope[T]]) -> None:
-        """バッチ適用（失敗時は例外を送出し、基盤側のRetry/DLQに委ねる）"""
+        """
+        (partition_key, seq) に対して冪等であること。
+        失敗時は例外を送出し、基盤側の Retry / DLQ 制御に委ねる。
+        """
         ...
+
+
+class DeadLetterPort(Protocol[T]):
+    """Projection のリトライ上限を超えたレコード（Poison Pill）を隔離する任意の契約"""
+
+    def put_dead_letter(self, record: DeadLetterRecord[T]) -> None: ...
+
+    def list_dead_letters(
+        self, *, consumer_id: str | None = None, limit: int = 100
+    ) -> Sequence[DeadLetterRecord[T]]: ...
 ```
+
+### 3.4 `ports/codec.py`・`ports/router.py`
+
+```python
+# --- ports/codec.py ---
+from __future__ import annotations
+
+from typing import Protocol, TypeVar
+
+T = TypeVar("T")
+
+
+class PayloadCodec(Protocol[T]):
+    """
+    encode は決定論的であること（論理的に等価な値から常に同じバイト列を返す。#2 B5）。
+    core/ingestion はこの出力から payload_hash を算出し、サイズ上限（#1 A3）も検査する。
+    """
+
+    def encode(self, value: T) -> bytes: ...
+
+    def decode(self, data: bytes) -> T: ...
+
+
+# --- ports/router.py ---
+class PartitionRouterPort(Protocol):
+    """新規パーティションの格納先シャードを決める純粋なポリシー（移動は扱わない。#3 C1）"""
+
+    def select_shard(self, partition_key: str, *, preferred_shard: str | None = None) -> str: ...
+```
+
+`ports/transport.py` は、将来の IPC 配信口（#1 A1・A2）のために予約し、v1 では定義しない。
+
+### 3.5 `StorageKernel` の公開 API（`core/kernel.py`、v1）
+
+基盤が実装し、親プロジェクトが呼ぶメソッドの形状である（#3 C3・C4・C5）。
+
+| メソッド                                                                                                                                 | 概要                                                                                                                  |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `append(partition_key, record_type, payload, idempotency_key, *, schema_version) -> WriteAck[T]`                                         | 状態確認（`read_only` なら拒否）→ サイズ検査 → 冪等性 → 採番 → 書き込み                                               |
+| `subscribe(pattern, callback, *, max_queue_size=256, drop_policy="drop_newest", on_error=None) -> SubscriptionHandle`                    | at-most-once の通知。購読者ごとの有界キュー                                                                           |
+| `register_projection(projection, *, partition_patterns=("*",), batch_size=100, retry_policy=RetryPolicy(), failure_policy=None) -> None` | at-least-once の投影。`failure_policy` 省略時は、`DeadLetterPort` があれば `dlq_and_skip`、なければ `pause_partition` |
+| `resume_projection(consumer_id, partition_key, *, skip_current=False) -> None`                                                           | `pause_partition` で止めた投影を再開する。`skip_current=True` で原因レコードを飛ばす                                  |
+| `set_partition_status(partition_key, status, *, expected_status=None) -> PartitionInfo`                                                  | `MetaDAOPort` へ委譲し、ルーティングキャッシュを更新する                                                              |
+| `sync(cursors, *, limit_per_partition=100)`                                                                                              | カーソルからの差分取得                                                                                                |
+| `close(*, timeout=5.0, drain_projections=False, drain_subscribers=False) -> ShutdownReport`                                              | 新規書き込みを拒否し、進行中の書き込みを待ってから停止する                                                            |
+
+### 3.6 v2 以降に回すもの
+
+| 項目                                                                           | 理由                                                                                 | 決定           |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | -------------- |
+| パーティション移動（`migrating` 状態、`Migratable*Port`、`migrate_partition`） | コピー検証、ルーティングキャッシュ無効化、CAS による参照切り替えを一体で設計するため | #3 C1          |
+| `BlobStorePort`、`RecordEnvelope.blob_refs`                                    | v1 は 64 KB 超を `PayloadTooLarge` で拒否する                                        | #1 A3          |
+| `PayloadUpcaster`                                                              | スキーマ移行の論点                                                                   | #4 D3 で決める |
 
 この契約にしておくことで、親プロジェクト側は以下の自由度を得られる。
 
