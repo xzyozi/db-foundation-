@@ -523,6 +523,8 @@ class UniversalStorageAPI:
 | 書き込み API           | `append()` のみ。`append_batch()` は必要になったら `ports/` を変えずに追加し、原子性は同一パーティション内に限る                       |
 | ストレージ             | DAO（テーブル構造・SQL・ドライバー）は親プロジェクトへ委譲する。基盤は In-Memory 実装と SQLite 参照実装（`contrib/sqlite/`）を同梱する |
 | 言語・依存・ライセンス | Python（`>=3.10`）、標準ライブラリのみ、Apache-2.0。FFI 構成は採らない                                                                 |
+| 文書番号 prefix        | `DBF`（例: `DBF-BD-001`、Issue #10 E1）                                                                                                |
+| `ephemeral`・`guard`   | v1 の対象外。BD に「v1 の対象外」と明記し、v2 以降で検討する（Issue #10 E2）                                                           |
 
 外部ブローカー型 OSS（NATS JetStream など）は、ストレージ実装を内部に抱えるため「DAO の自由度」という必須要件と合わず、採用しない。
 

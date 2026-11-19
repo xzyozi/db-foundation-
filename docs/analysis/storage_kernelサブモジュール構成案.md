@@ -502,6 +502,7 @@ class PartitionRouterPort(Protocol):
 | スナップショットの自動生成、件数・経過時間による自動実行                                                                                | Retention と一体で設計するため。v1 は親による手動の `write_snapshot` のみ                                             | #4 D1 |
 | Retention（`delete_through`、Retention 対象 Consumer の登録・一覧・登録解除、最古保持 `seq` の管理、`CursorExpiredError` の実際の判定） | 削除操作、Consumer の登録簿、カーソルの期限切れ処理を一体で設計しないと、`fetch_range` の「欠落なし」契約が崩れるため | #4 D1 |
 | VACUUM・チェックポイントの自動実行                                                                                                      | Retention の後処理として扱うため                                                                                      | #4 D1 |
+| `core/ephemeral.py`（`EphemeralTTLStore`）、`ports/guard.py`（`AccessPolicyPort`・`RateLimiterPort`）                                   | 単一プロセス・ローカルアプリではアクセス制御・レート制限の必要性が低く、揮発データは親プロジェクトがメモリ上で持てば足りるため | #10 E2 |
 
 この契約にしておくことで、親プロジェクト側は以下の自由度を得られる。
 
