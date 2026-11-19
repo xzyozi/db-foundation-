@@ -44,7 +44,10 @@ class TestParentAppExample(unittest.TestCase):
                 self.assertEqual(ack2.envelope.seq, 2)
 
                 self.assertTrue(
-                    _wait_until(lambda: len(runtime.fts_projection.search("kernel")) == 1)
+                    _wait_until(
+                        lambda: len(runtime.fts_projection.search("kernel")) == 1
+                        and len(runtime.fts_projection.search("adapters")) == 1
+                    )
                 )
                 hits = runtime.fts_projection.search("adapters")
                 self.assertEqual(len(hits), 1)
