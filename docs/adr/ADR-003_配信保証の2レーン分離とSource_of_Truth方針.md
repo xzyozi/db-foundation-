@@ -18,7 +18,7 @@ related_documents:
   - "storage_kernel サブモジュール構成案（相対パス: ../analysis/storage_kernelサブモジュール構成案.md）"
   - "DBF-BD-001 基本設計書（相対パス: ../design/DBF-BD-001_基本設計書.md）"
   - "DBF-IF-001 IF/API仕様書（相対パス: ../design/DBF-IF-001_IF仕様書.md）"
-  - "DBF-DD-002 配信とProjection詳細設計書（相対パス: ../design/...）"
+  - "DBF-DD-002 配信とProjection詳細設計書（相対パス: ../design/DBF-DD-002_配信とProjection詳細設計書.md）"
 ---
 
 # ADR-003: 配信保証の2レーン分離とSource of Truth方針
