@@ -71,6 +71,7 @@ related_documents:
 import sqlite3
 from pathlib import Path
 
+
 def backup_sqlite_db(src_path: Path, dst_path: Path) -> None:
     dst_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(f"file:{src_path}?mode=ro", uri=True) as src_conn:
