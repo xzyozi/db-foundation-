@@ -64,7 +64,12 @@ jobs:
 
       - name: Run Mypy
         if: steps.check_pyproject.outputs.has_pyproject == 'true'
-        run: uv run --no-sync mypy .
+        run: |
+          if [ -z "$(find . -path './.*' -prune -o -path './build' -prune -o -path './dist' -prune -o -path './venv' -prune -o -path './mutants' -prune -o \( -name '*.py' -o -name '*.pyi' \) -print -quit)" ]; then
+            echo "No Python source files found; skipping mypy."
+          else
+            uv run --no-sync mypy .
+          fi
 
       - name: Run Pytest
         if: steps.check_pyproject.outputs.has_pyproject == 'true'
