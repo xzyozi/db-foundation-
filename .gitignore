@@ -18,6 +18,9 @@ venv/
 .ruff_cache/
 .mypy_cache/
 .pytest_cache/
+.coverage
+.coverage.*
+mutants/
 
 # JavaScript
 node_modules/
