@@ -277,9 +277,7 @@ class CursorExpiredError(StorageKernelError):
     """
 
     def __init__(self, partition_key: str, cursor_seq: int, oldest_retained_seq: int) -> None:
-        super().__init__(
-            f"cursor {cursor_seq} on {partition_key} is older than retained seq {oldest_retained_seq}"
-        )
+        super().__init__(f"cursor {cursor_seq} on {partition_key} is older than retained seq {oldest_retained_seq}")
         self.partition_key = partition_key
         self.cursor_seq = cursor_seq
         self.oldest_retained_seq = oldest_retained_seq
@@ -311,9 +309,7 @@ T = TypeVar("T")
 class ShardTxPort(Protocol[T]):
     """単一シャード内の排他書き込みトランザクションの契約"""
 
-    def find_by_idempotency(
-        self, partition_key: str, idempotency_key: str
-    ) -> RecordEnvelope[T] | None:
+    def find_by_idempotency(self, partition_key: str, idempotency_key: str) -> RecordEnvelope[T] | None:
         """payload_hash を含む完全な RecordEnvelope を返す"""
         ...
 
