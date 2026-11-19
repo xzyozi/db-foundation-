@@ -4,7 +4,7 @@ document_type: "analysis"
 document_role: "rationale"
 ssot_scope: "system_architecture（構想段階の判断材料）"
 status: "draft"
-version: "0.2"
+version: "0.3"
 created_at: "2026-11-19"
 updated_at: "2026-11-19"
 author: "xzyozi"
@@ -98,7 +98,7 @@ storage_kernel/                  # Gitサブモジュールルート
 
 DAOを親側へ完全に逃がす際、最も事故が起きやすいのは **トランザクション境界** である。「重複チェック → 連番採番 → 書き込み」は同一シャード内で原子的（Atomic）に行う必要があるため、基盤側は **Unit of Work（トランザクション・コンテキスト）** または **アトミックな単一プリミティブ** を Port として要求する。
 
-以下は v1 の定義案である。決定の根拠は Issue #1（前提・スコープ）、#2（整合性・耐久性）、#3（API・Port 契約）を参照する。v1 に含めないもの（パーティション移動、`migrating` 状態、`BlobStorePort`、`PayloadUpcaster`）は 3.6 にまとめる。
+以下は v1 の定義案である。決定の根拠は Issue #1（前提・スコープ）、#2（整合性・耐久性）、#3（API・Port 契約）、#4（運用）を参照する。v1 に含めないもの（パーティション移動、`migrating` 状態、`BlobStorePort`、スナップショットの自動生成と Retention）は 3.6 にまとめる。
 
 ### 3.1 `contracts/envelope.py`
 
@@ -110,10 +110,19 @@ from typing import Generic, Literal, Protocol, TypeVar
 
 T = TypeVar("T")
 
+SNAPSHOT_RECORD_TYPE = "__snapshot__"  # #4 D1。"__" で始まる record_type はシステム予約
 DurabilityLevel = Literal["none", "process_crash", "power_loss"]  # #2 B1
 PartitionStatus = Literal["active", "read_only"]  # #3 C5（v2 で "migrating" を追加）
 DropPolicy = Literal["drop_newest", "drop_oldest", "disconnect"]  # #3 C3
 ProjectionFailurePolicy = Literal["dlq_and_skip", "pause_partition"]  # #3 C3
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    max_attempts: int = 3
+    initial_delay_sec: float = 0.1
+    backoff_multiplier: float = 2.0
+    max_delay_sec: float = 5.0
 
 
 @dataclass(frozen=True)
@@ -131,9 +140,19 @@ class RecordEnvelope(Generic[T]):
     idempotency_key: str
     record_type: str
     schema_version: int
-    payload_hash: str  # core/ingestion が算出（#2 B5）
+    payload_hash: str  # core/ingestion が保存時の元データから算出（#2 B5）。Upcast 後に再計算しない（#4 D3）
     payload: T
     created_at: float
+    covers_through_seq: int | None = None  # __snapshot__ のときだけ必須。反映済みの最終 seq（#4 D1）
+
+
+@dataclass(frozen=True)
+class KernelConfig:
+    """親の bootstrap.py から注入する設定（環境変数や設定ファイルは読まない）"""
+
+    schema_registry: dict[str, int]  # record_type ごとの最新 schema_version（#4 D3）
+    max_payload_bytes: int = 64 * 1024  # #1 A3
+    default_retry_policy: RetryPolicy = RetryPolicy()
 
 
 @dataclass(frozen=True)
@@ -151,14 +170,6 @@ class DeadLetterRecord(Generic[T]):
     error_message: str
     attempts: int
     failed_at: float
-
-
-@dataclass(frozen=True)
-class RetryPolicy:
-    max_attempts: int = 3
-    initial_delay_sec: float = 0.1
-    backoff_multiplier: float = 2.0
-    max_delay_sec: float = 5.0
 
 
 @dataclass(frozen=True)
@@ -248,6 +259,34 @@ class PartitionReadOnlyError(StorageKernelError):
 
 class PartitionStateConflictError(StorageKernelError):
     """set_partition_status の expected_status が現在の状態と一致しない（#3 C5）"""
+
+
+class KernelMaintenanceError(StorageKernelError):
+    """メンテナンスモード中に書き込み・状態変更などが呼ばれた（#4 D2）"""
+
+
+class ReservedRecordTypeError(StorageKernelError):
+    """append に "__" で始まる予約 record_type を渡した（#4 D1）"""
+
+
+class CursorExpiredError(StorageKernelError):
+    """
+    保持範囲より古いカーソルで sync / fetch した（#4 D1）。
+    v1 は Retention を行わないため送出されない。契約として先に定義し、v2 で判定を実装する。
+    呼び出し側は最新の __snapshot__ から再開する。
+    """
+
+    def __init__(self, partition_key: str, cursor_seq: int, oldest_retained_seq: int) -> None:
+        super().__init__(
+            f"cursor {cursor_seq} on {partition_key} is older than retained seq {oldest_retained_seq}"
+        )
+        self.partition_key = partition_key
+        self.cursor_seq = cursor_seq
+        self.oldest_retained_seq = oldest_retained_seq
+
+
+class SchemaVersionError(StorageKernelError):
+    """未知の新しい schema_version、または Upcast の変換経路が欠けている（#4 D3）"""
 ```
 
 ### 3.3 `ports/dao.py`
@@ -382,7 +421,7 @@ class DeadLetterPort(Protocol[T]):
     ) -> Sequence[DeadLetterRecord[T]]: ...
 ```
 
-### 3.4 `ports/codec.py`・`ports/router.py`
+### 3.4 `ports/codec.py`・`ports/maintenance.py`・`ports/router.py`
 
 ```python
 # --- ports/codec.py ---
@@ -404,6 +443,34 @@ class PayloadCodec(Protocol[T]):
     def decode(self, data: bytes) -> T: ...
 
 
+class PayloadUpcaster(Protocol):
+    """
+    旧 schema_version のバイト列を 1 版だけ進める（#4 D3）。
+    - 決定論的で副作用を持たない。保存済みの元レコードは書き換えない
+    - 旧版は最新の decode で読めないことがあるため、バイト列で受け渡す。decode は最後に 1 回だけ行う
+    - 変換できない版は SchemaVersionError を送出する。Downcast は提供しない
+    """
+
+    def upcast(self, record_type: str, from_version: int, raw_payload: bytes) -> bytes:
+        """from_version から from_version + 1 へ変換したバイト列を返す"""
+        ...
+
+
+# --- ports/maintenance.py ---
+class MaintenanceHooks(Protocol):
+    """
+    親が実装するメンテナンスの拡張口（#4 D1・D2）。
+    v1 はメンテナンスモードの開始・終了の通知だけを定義する。
+    スナップショットの自動生成、Retention、VACUUM・チェックポイントのフックは v2 で追加する。
+    """
+
+    def on_enter_maintenance(self, reason: str) -> None:
+        """書き込みと進行中のトランザクションが止まった後に呼ばれる。バックアップはここで取る"""
+        ...
+
+    def on_exit_maintenance(self) -> None: ...
+
+
 # --- ports/router.py ---
 class PartitionRouterPort(Protocol):
     """新規パーティションの格納先シャードを決める純粋なポリシー（移動は扱わない。#3 C1）"""
@@ -415,25 +482,30 @@ class PartitionRouterPort(Protocol):
 
 ### 3.5 `StorageKernel` の公開 API（`core/kernel.py`、v1）
 
-基盤が実装し、親プロジェクトが呼ぶメソッドの形状である（#3 C3・C4・C5）。
+基盤が実装し、親プロジェクトが呼ぶメソッドの形状である（#3 C3・C4・C5、#4 D1〜D3）。
 
-| メソッド                                                                                                                                 | 概要                                                                                                                  |
-| ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `append(partition_key, record_type, payload, idempotency_key, *, schema_version) -> WriteAck[T]`                                         | 状態確認（`read_only` なら拒否）→ サイズ検査 → 冪等性 → 採番 → 書き込み                                               |
-| `subscribe(pattern, callback, *, max_queue_size=256, drop_policy="drop_newest", on_error=None) -> SubscriptionHandle`                    | at-most-once の通知。購読者ごとの有界キュー                                                                           |
-| `register_projection(projection, *, partition_patterns=("*",), batch_size=100, retry_policy=RetryPolicy(), failure_policy=None) -> None` | at-least-once の投影。`failure_policy` 省略時は、`DeadLetterPort` があれば `dlq_and_skip`、なければ `pause_partition` |
-| `resume_projection(consumer_id, partition_key, *, skip_current=False) -> None`                                                           | `pause_partition` で止めた投影を再開する。`skip_current=True` で原因レコードを飛ばす                                  |
-| `set_partition_status(partition_key, status, *, expected_status=None) -> PartitionInfo`                                                  | `MetaDAOPort` へ委譲し、ルーティングキャッシュを更新する                                                              |
-| `sync(cursors, *, limit_per_partition=100)`                                                                                              | カーソルからの差分取得                                                                                                |
-| `close(*, timeout=5.0, drain_projections=False, drain_subscribers=False) -> ShutdownReport`                                              | 新規書き込みを拒否し、進行中の書き込みを待ってから停止する                                                            |
+| メソッド                                                                                                                                                          | 概要                                                                                                                                                                                    |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `append(partition_key, record_type, payload, idempotency_key, *, schema_version) -> WriteAck[T]`                                                                  | 予約種別の拒否（`ReservedRecordTypeError`）→ 状態確認（`read_only` なら拒否）→ サイズ検査 → 冪等性 → 採番 → 書き込み。`schema_version` は `schema_registry` の最新版と一致すること      |
+| `write_snapshot(partition_key, payload, idempotency_key, *, covers_through_seq, schema_version) -> WriteAck[T]`                                                   | 親が作ったスナップショットを `__snapshot__` として書き込む。`covers_through_seq` はその時点の最終 `seq` 以下であること。64 KB 上限も適用する                                            |
+| `subscribe(pattern, callback, *, max_queue_size=256, drop_policy="drop_newest", on_error=None) -> SubscriptionHandle`                                             | at-most-once の通知。購読者ごとの有界キュー。`__snapshot__` は配信しない                                                                                                                |
+| `register_projection(projection, *, partition_patterns=("*",), batch_size=100, retry_policy=RetryPolicy(), failure_policy=None, include_snapshots=False) -> None` | at-least-once の投影。`failure_policy` 省略時は、`DeadLetterPort` があれば `dlq_and_skip`、なければ `pause_partition`。`include_snapshots=True` のときだけ `__snapshot__` を渡す        |
+| `resume_projection(consumer_id, partition_key, *, skip_current=False) -> None`                                                                                    | `pause_partition` で止めた投影を再開する。`skip_current=True` で原因レコードを飛ばす                                                                                                    |
+| `set_partition_status(partition_key, status, *, expected_status=None) -> PartitionInfo`                                                                           | `MetaDAOPort` へ委譲し、ルーティングキャッシュを更新する                                                                                                                                |
+| `enter_maintenance(reason, *, drain_projections=False, timeout=30.0) -> None`                                                                                     | 新規の書き込み、パーティション作成、状態変更、カーソル更新を `KernelMaintenanceError` で止め、進行中のトランザクションの完了を待ってから `MaintenanceHooks.on_enter_maintenance` を呼ぶ |
+| `exit_maintenance() -> None`                                                                                                                                      | `on_exit_maintenance` を呼んでから通常運転に戻す                                                                                                                                        |
+| `sync(cursors, *, limit_per_partition=100)`                                                                                                                       | カーソルからの差分取得。読み取り時に Upcast を適用する。保持範囲より古いカーソルは `CursorExpiredError`（v1 では発生しない）                                                            |
+| `close(*, timeout=5.0, drain_projections=False, drain_subscribers=False) -> ShutdownReport`                                                                       | 新規書き込みを拒否し、進行中の書き込みを待ってから停止する                                                                                                                              |
 
 ### 3.6 v2 以降に回すもの
 
-| 項目                                                                           | 理由                                                                                 | 決定           |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | -------------- |
-| パーティション移動（`migrating` 状態、`Migratable*Port`、`migrate_partition`） | コピー検証、ルーティングキャッシュ無効化、CAS による参照切り替えを一体で設計するため | #3 C1          |
-| `BlobStorePort`、`RecordEnvelope.blob_refs`                                    | v1 は 64 KB 超を `PayloadTooLarge` で拒否する                                        | #1 A3          |
-| `PayloadUpcaster`                                                              | スキーマ移行の論点                                                                   | #4 D3 で決める |
+| 項目                                                                                                                                    | 理由                                                                                                                  | 決定  |
+| --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----- |
+| パーティション移動（`migrating` 状態、`Migratable*Port`、`migrate_partition`）                                                          | コピー検証、ルーティングキャッシュ無効化、CAS による参照切り替えを一体で設計するため                                  | #3 C1 |
+| `BlobStorePort`、`RecordEnvelope.blob_refs`                                                                                             | v1 は 64 KB 超を `PayloadTooLarge` で拒否する                                                                         | #1 A3 |
+| スナップショットの自動生成、件数・経過時間による自動実行                                                                                | Retention と一体で設計するため。v1 は親による手動の `write_snapshot` のみ                                             | #4 D1 |
+| Retention（`delete_through`、Retention 対象 Consumer の登録・一覧・登録解除、最古保持 `seq` の管理、`CursorExpiredError` の実際の判定） | 削除操作、Consumer の登録簿、カーソルの期限切れ処理を一体で設計しないと、`fetch_range` の「欠落なし」契約が崩れるため | #4 D1 |
+| VACUUM・チェックポイントの自動実行                                                                                                      | Retention の後処理として扱うため                                                                                      | #4 D1 |
 
 この契約にしておくことで、親プロジェクト側は以下の自由度を得られる。
 
