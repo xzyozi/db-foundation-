@@ -2,24 +2,30 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 import logging
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 
 from ..contracts.envelope import (
+    DropPolicy,
     KernelConfig,
     PartitionInfo,
     PartitionStatus,
+    ProjectionFailurePolicy,
     RecordEnvelope,
+    RetryPolicy,
+    SubscriptionHandle,
     WriteAck,
 )
 from ..contracts.telemetry import TelemetryEvent, TelemetrySink
 from ..ports.codec import PayloadCodec, PayloadUpcaster
-from ..ports.dao import DeadLetterPort, MetaDAOPort, ShardDAOPort
+from ..ports.dao import DeadLetterPort, MetaDAOPort, ProjectionPort, ShardDAOPort
 from ..ports.maintenance import MaintenanceHooks
 from ..ports.router import PartitionRouterPort
 from ..runtime.concurrency import ShardLockManager
+from .event_bus import EventDispatcher
 from .ingestion import WritePipeline
+from .projection import ProjectionRunner
 
 T = TypeVar("T")
 
@@ -56,6 +62,7 @@ class StorageKernel(Generic[T]):
 
         self._lock_manager = ShardLockManager()
         self._post_commit_listeners: list[Callable[[RecordEnvelope[T], bool], None]] = []
+        self._event_dispatcher = EventDispatcher(telemetry_sink=telemetry_sink)
         self._write_pipeline = WritePipeline(
             config=config,
             shard_dao=shard_dao,
@@ -65,7 +72,17 @@ class StorageKernel(Generic[T]):
             lock_manager=self._lock_manager,
             telemetry_sink=telemetry_sink,
             store_raw_bytes=store_raw_bytes,
+            upcast_decode_fn=self._decode_stored_record,
         )
+        self._projection_runner = ProjectionRunner(
+            shard_dao=shard_dao,
+            meta_dao=meta_dao,
+            dead_letter_port=dead_letter_port,
+            default_retry_policy=config.default_retry_policy,
+            decode_record_fn=self._decode_stored_record,
+            telemetry_sink=telemetry_sink,
+        )
+        self._post_commit_listeners.append(self._dispatch_post_commit)
 
         logger.info(
             "StorageKernel initialized (shard_durability=%s, meta_durability=%s)",
@@ -82,6 +99,26 @@ class StorageKernel(Generic[T]):
                     },
                 )
             )
+
+    def _decode_stored_record(self, stored: RecordEnvelope[Any]) -> RecordEnvelope[T]:
+        if self._store_raw_bytes and isinstance(stored.payload, bytes):
+            decoded = self._codec.decode(stored.payload)
+            return RecordEnvelope(
+                partition_key=stored.partition_key,
+                seq=stored.seq,
+                idempotency_key=stored.idempotency_key,
+                record_type=stored.record_type,
+                schema_version=stored.schema_version,
+                payload_hash=stored.payload_hash,
+                payload=decoded,
+                created_at=stored.created_at,
+                covers_through_seq=stored.covers_through_seq,
+            )
+        return cast(RecordEnvelope[T], stored)
+
+    def _dispatch_post_commit(self, envelope: RecordEnvelope[T], is_snapshot: bool) -> None:
+        self._event_dispatcher.publish(cast(RecordEnvelope[object], envelope), is_snapshot=is_snapshot)
+        self._projection_runner.notify(envelope)
 
     def _notify_post_commit(self, envelope: RecordEnvelope[T], is_snapshot: bool) -> None:
         for listener in self._post_commit_listeners:
@@ -130,6 +167,62 @@ class StorageKernel(Generic[T]):
         if result.should_dispatch_event:
             self._notify_post_commit(result.ack.envelope, result.is_snapshot)
         return result.ack
+
+    def subscribe(
+        self,
+        pattern: str,
+        callback: Callable[[RecordEnvelope[T]], None],
+        *,
+        max_queue_size: int = 256,
+        drop_policy: DropPolicy = "drop_newest",
+        on_error: Callable[[RecordEnvelope[T], Exception], None] | None = None,
+    ) -> SubscriptionHandle:
+        """At-Most-Once の非同期購読を登録する（IF-003 / F-201）。"""
+        self._lock_manager.check_mutable_state()
+        return self._event_dispatcher.subscribe(
+            pattern,
+            cast(Callable[[RecordEnvelope[object]], None], callback),
+            max_queue_size=max_queue_size,
+            drop_policy=drop_policy,
+            on_error=cast(Callable[[RecordEnvelope[object], Exception], None] | None, on_error),
+        )
+
+    def register_projection(
+        self,
+        projection: ProjectionPort[T],
+        *,
+        partition_patterns: Sequence[str] = ("*",),
+        batch_size: int = 100,
+        retry_policy: RetryPolicy | None = None,
+        failure_policy: ProjectionFailurePolicy | None = None,
+        include_snapshots: bool = False,
+    ) -> None:
+        """At-Least-Once の非同期投影ワーカーを登録する（IF-004 / F-202）。"""
+        self._lock_manager.check_mutable_state()
+        self._projection_runner.register(
+            projection,
+            partition_patterns=partition_patterns,
+            batch_size=batch_size,
+            retry_policy=retry_policy,
+            failure_policy=failure_policy,
+            include_snapshots=include_snapshots,
+        )
+
+    def resume_projection(
+        self,
+        consumer_id: str,
+        partition_key: str,
+        *,
+        skip_current: bool = False,
+    ) -> None:
+        """pause_partition で一時停止した投影を再開する（IF-005 / F-203）。"""
+        if skip_current:
+            self._lock_manager.check_mutable_state()
+        self._projection_runner.resume_partition(
+            consumer_id,
+            partition_key,
+            skip_current=skip_current,
+        )
 
     def set_partition_status(
         self,
