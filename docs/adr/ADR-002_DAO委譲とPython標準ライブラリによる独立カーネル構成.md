@@ -16,8 +16,8 @@ related_documents:
   - "用語集（相対パス: ../../CONTEXT.md）"
   - "汎用データアクセスAPI層の構想（相対パス: ../analysis/汎用データアクセスAPI層の構想.md）"
   - "storage_kernel サブモジュール構成案（相対パス: ../analysis/storage_kernelサブモジュール構成案.md）"
-  - "DBF-BD-001 基本設計書（相対パス: ../design/...）"
-  - "DBF-ENV-001 環境・開発基盤仕様書（相対パス: ../setup/...）"
+  - "DBF-BD-001 基本設計書（相対パス: ../design/DBF-BD-001_基本設計書.md）"
+  - "DBF-ENV-001 環境・開発基盤仕様書（相対パス: ../setup/DBF-ENV-001_環境・開発基盤仕様書.md）"
 ---
 
 # ADR-002: DAO委譲とPython標準ライブラリによる独立カーネル構成

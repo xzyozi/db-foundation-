@@ -18,7 +18,7 @@ related_documents:
   - "Mermaid CI 検証運用（相対パス: ./mermaid_ci_validation.md）"
   - "Git Flow 運用規約 ＆ ブランチ自動管理ガイド（相対パス: ./git_flow_and_branch_policy.md）"
   - "ADR-002 DAO委譲とPython標準ライブラリによる独立カーネル構成（相対パス: ../adr/ADR-002_DAO委譲とPython標準ライブラリによる独立カーネル構成.md）"
-  - "DBF-BD-001 基本設計書（相対パス: ../design/...）"
+  - "DBF-BD-001 基本設計書（相対パス: ../design/DBF-BD-001_基本設計書.md）"
 ---
 
 # 環境・開発基盤仕様書
