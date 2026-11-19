@@ -5,9 +5,9 @@ document_number: "DBF-BD-001"
 document_role: "normative"
 ssot_scope: "system_architecture"
 status: "draft"
-version: "1.0"
+version: "1.1"
 created_at: "2026-11-19"
-updated_at: "2026-11-19"
+updated_at: "2026-11-20"
 author: "xzyozi"
 owner: "xzyozi"
 purpose: "storage_kernel システム全体の目的・Ports & Adapters アーキテクチャ方針・責務境界・横断的な非機能方針を定義し、詳細設計およびDAO実装時の設計ブレを防ぐため"
@@ -25,6 +25,7 @@ related_documents:
   - "DBF-DD-002 配信とProjection詳細設計書（相対パス: ./DBF-DD-002_配信とProjection詳細設計書.md）"
   - "DBF-DD-003 同期と版管理詳細設計書（相対パス: ./DBF-DD-003_同期と版管理詳細設計書.md）"
   - "DBF-DD-004 実行制御詳細設計書（相対パス: ./DBF-DD-004_実行制御詳細設計書.md）"
+  - "DBF-TEST-001 性能検証結果報告書（相対パス: ../test/DBF-TEST-001_性能検証結果報告書.md）"
 ---
 
 # 基本設計書（基本仕様・システム全体アーキテクチャ定義）
@@ -57,8 +58,8 @@ related_documents:
 
 | ID | 区分 | 要件 | 目標値・基準 | 測定方法・確認先 | 正本 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| NFR-001 | 性能（スループット） | 単件 `append()` による書き込み処理能力 | 定常 10〜50 writes/sec、バースト最大 500〜1,000 writes/sec（暫定目標値。`durability="power_loss"` 環境下でベンチマーク測定し許容値を確定する） | 手動性能試験（Issue #7：`benchmarks/`）での p50/p95/p99 およびスループット計測 | 本書（`DBF-BD-001`） |
-| NFR-002 | 性能・容量（スケール） | パーティション数およびレコード保持規模 | パーティション数 10〜1,000（ルーティング表のメモリキャッシュ前提）、1パーティションあたり最大数十万件（カーソル 0 からの全件再生が許容時間内に完了すること） | 手動性能試験（Issue #7：300,000件書き込み・全件再生・再起動後再生） | 本書（`DBF-BD-001`） |
+| NFR-001 | 性能（スループット） | 単件 `append()` による書き込み処理能力 | 定常 10〜50 writes/sec、バースト 500〜1,000 writes/sec 以上（`durability="power_loss"` 環境での実測確認済み許容値：代表値 481 B で 1,750 writes/sec 以上・p99 2.2 ms 以下、上限付近 60 KB で 930 writes/sec 以上・p99 2.8 ms 以下） | 手動性能試験（Issue #7：`benchmarks/bench_storage_kernel.py`、[`DBF-TEST-001`](../test/DBF-TEST-001_性能検証結果報告書.md)） | 本書（`DBF-BD-001`） |
+| NFR-002 | 性能・容量（スケール） | パーティション数およびレコード保持規模 | パーティション数 10〜1,000、1パーティション最大 300,000 件（実測許容値：代表値 300,000 件のカーソル 0 からの `sync` 全件再生が 10 秒以内、実測 5.7〜6.2 秒・peak tracemalloc 3.4 MiB 以下。60 KB 大容量時は `limit_per_partition` を 100〜200 程度に抑えてメモリ消費を制御する） | 手動性能試験（Issue #7：[`DBF-TEST-001`](../test/DBF-TEST-001_性能検証結果報告書.md)） | 本書（`DBF-BD-001`） |
 | NFR-003 | 容量制限（ペイロード） | 1レコードあたりのエンコード後ペイロードサイズ上限 | 最大 64 KB（65,536 bytes、スナップショットを含む）。超過時は `PayloadTooLarge` で即座に拒否する | 単体テストおよび Contract Test（`QG-004`） | 本書（`DBF-BD-001`） / `DBF-IF-001` |
 | NFR-004 | 可用性・耐久性 | Write-Before-ACK の永続化保証水準 | 既定および参照実装は `durability="power_loss"`（電源断耐性、SQLite `WAL` + `synchronous=FULL`）。DAO は自身の `durability` を自己申告し、COMMIT 完了後にのみ ACK とイベント配信を行う | Contract Test 項目1・2（`QG-004`）および起動時 telemetry 検査 | 本書（`DBF-BD-001`） / `DBF-DS-001` |
 | NFR-005 | 信頼性（配信・順序） | パーティション内順序保証と取りこぼし対策 | パーティション単位の厳密な単調増加連番 `seq`（欠番・逆転なし）。`subscribe` は At-Most-Once（有界キュー）、`Projection` は At-Least-Once + `(partition_key, seq)` 冪等適用（Dirty Set と `fetch_range` で自動追いつき） | Contract Test 項目3〜10 およびユニットテスト（`QG-004`） | 本書（`DBF-BD-001`） / `DBF-DD-002` |
@@ -250,3 +251,4 @@ flowchart TD
 | 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                              |
 | :------ | :--------- | :----- | :-------------------------------------------------------------------- |
 | Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #11 に基づき storage_kernel v1 の基本設計書を初版制定） |
+| Rev.1.1 | 2026-11-20 | xzyozi | Issue #7 性能検証（`DBF-TEST-001`）の実測結果に基づき `NFR-001`・`NFR-002` の許容値を確定 |
