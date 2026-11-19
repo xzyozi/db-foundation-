@@ -8,14 +8,17 @@ from .kernel import StorageKernel
 from .ordering import SequenceCoordinator
 from .projection import ProjectionRunner
 from .reliability import DeadLetterCoordinator
+from .sync_engine import CursorSyncEngine, UpcastPipeline
 
 __all__ = [
+    "CursorSyncEngine",
     "DeadLetterCoordinator",
     "EventDispatcher",
     "PatternMatcher",
     "ProjectionRunner",
     "SequenceCoordinator",
     "StorageKernel",
+    "UpcastPipeline",
     "WritePipeline",
     "compute_payload_hash",
 ]

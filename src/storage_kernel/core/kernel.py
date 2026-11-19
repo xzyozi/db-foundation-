@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 import logging
 from typing import Any, Generic, TypeVar, cast
 
@@ -14,6 +14,7 @@ from ..contracts.envelope import (
     ProjectionFailurePolicy,
     RecordEnvelope,
     RetryPolicy,
+    ShutdownReport,
     SubscriptionHandle,
     WriteAck,
 )
@@ -23,9 +24,12 @@ from ..ports.dao import DeadLetterPort, MetaDAOPort, ProjectionPort, ShardDAOPor
 from ..ports.maintenance import MaintenanceHooks
 from ..ports.router import PartitionRouterPort
 from ..runtime.concurrency import ShardLockManager
+from ..runtime.lifecycle import LifecycleManager
+from ..runtime.maintenance import MaintenanceCoordinator
 from .event_bus import EventDispatcher
 from .ingestion import WritePipeline
 from .projection import ProjectionRunner
+from .sync_engine import CursorSyncEngine, UpcastPipeline
 
 T = TypeVar("T")
 
@@ -63,6 +67,13 @@ class StorageKernel(Generic[T]):
         self._lock_manager = ShardLockManager()
         self._post_commit_listeners: list[Callable[[RecordEnvelope[T], bool], None]] = []
         self._event_dispatcher = EventDispatcher(telemetry_sink=telemetry_sink)
+        self._upcast_pipeline = UpcastPipeline(
+            config=config,
+            codec=codec,
+            upcaster=upcaster,
+            store_raw_bytes=store_raw_bytes,
+            telemetry_sink=telemetry_sink,
+        )
         self._write_pipeline = WritePipeline(
             config=config,
             shard_dao=shard_dao,
@@ -72,14 +83,33 @@ class StorageKernel(Generic[T]):
             lock_manager=self._lock_manager,
             telemetry_sink=telemetry_sink,
             store_raw_bytes=store_raw_bytes,
-            upcast_decode_fn=self._decode_stored_record,
+            upcast_decode_fn=self._upcast_pipeline.upcast_and_decode_envelope,
         )
         self._projection_runner = ProjectionRunner(
             shard_dao=shard_dao,
             meta_dao=meta_dao,
             dead_letter_port=dead_letter_port,
             default_retry_policy=config.default_retry_policy,
-            decode_record_fn=self._decode_stored_record,
+            decode_record_fn=self._upcast_pipeline.upcast_and_decode_envelope,
+            telemetry_sink=telemetry_sink,
+        )
+        self._sync_engine = CursorSyncEngine(
+            shard_dao=shard_dao,
+            meta_dao=meta_dao,
+            lock_manager=self._lock_manager,
+            upcast_pipeline=self._upcast_pipeline,
+            telemetry_sink=telemetry_sink,
+        )
+        self._maintenance = MaintenanceCoordinator(
+            lock_manager=self._lock_manager,
+            projection_runner=self._projection_runner,
+            maintenance_hooks=maintenance_hooks,
+            telemetry_sink=telemetry_sink,
+        )
+        self._lifecycle = LifecycleManager(
+            lock_manager=self._lock_manager,
+            projection_runner=self._projection_runner,
+            event_dispatcher=self._event_dispatcher,
             telemetry_sink=telemetry_sink,
         )
         self._post_commit_listeners.append(self._dispatch_post_commit)
@@ -99,22 +129,6 @@ class StorageKernel(Generic[T]):
                     },
                 )
             )
-
-    def _decode_stored_record(self, stored: RecordEnvelope[Any]) -> RecordEnvelope[T]:
-        if self._store_raw_bytes and isinstance(stored.payload, bytes):
-            decoded = self._codec.decode(stored.payload)
-            return RecordEnvelope(
-                partition_key=stored.partition_key,
-                seq=stored.seq,
-                idempotency_key=stored.idempotency_key,
-                record_type=stored.record_type,
-                schema_version=stored.schema_version,
-                payload_hash=stored.payload_hash,
-                payload=decoded,
-                created_at=stored.created_at,
-                covers_through_seq=stored.covers_through_seq,
-            )
-        return cast(RecordEnvelope[T], stored)
 
     def _dispatch_post_commit(self, envelope: RecordEnvelope[T], is_snapshot: bool) -> None:
         self._event_dispatcher.publish(cast(RecordEnvelope[object], envelope), is_snapshot=is_snapshot)
@@ -248,3 +262,40 @@ class StorageKernel(Generic[T]):
                     )
                 )
             return updated
+
+    def enter_maintenance(
+        self,
+        reason: str,
+        *,
+        drain_projections: bool = False,
+        timeout: float = 30.0,
+    ) -> None:
+        """メンテナンスモードへ移行し、バックアップ整合点を確立する（IF-007 / F-402）。"""
+        self._maintenance.enter(reason, drain_projections=drain_projections, timeout=timeout)
+
+    def exit_maintenance(self) -> None:
+        """メンテナンスモードを解除し、通常運転を再開する（IF-008 / F-403）。"""
+        self._maintenance.exit()
+
+    def sync(
+        self,
+        cursors: Mapping[str, int],
+        *,
+        limit_per_partition: int = 100,
+    ) -> dict[str, list[RecordEnvelope[T]]]:
+        """複数シャードを横断して未処理差分を取得し、読み取り時 Upcast を適用して返す（IF-009 / F-301）。"""
+        return self._sync_engine.sync(cursors, limit_per_partition=limit_per_partition)
+
+    def close(
+        self,
+        *,
+        timeout: float = 5.0,
+        drain_projections: bool = False,
+        drain_subscribers: bool = False,
+    ) -> ShutdownReport:
+        """新規書き込みを拒否し、進行中の書き込み完了後にワーカーを停止する（IF-010 / F-404）。"""
+        return self._lifecycle.shutdown(
+            timeout=timeout,
+            drain_projections=drain_projections,
+            drain_subscribers=drain_subscribers,
+        )
