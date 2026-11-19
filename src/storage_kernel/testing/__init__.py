@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .contract_test import DAOContractBundle, ShardDAOContractTest, StorageKernelContractTest
+from .fault_inject import FaultInjectingProjection, FaultInjectingShardDAO, InjectedFaultError
 from .memory_ports import (
     InMemoryDeadLetter,
     InMemoryMetaDAO,
@@ -16,11 +17,14 @@ from .memory_ports import (
 
 __all__ = [
     "DAOContractBundle",
+    "FaultInjectingProjection",
+    "FaultInjectingShardDAO",
     "InMemoryDeadLetter",
     "InMemoryMetaDAO",
     "InMemoryProjection",
     "InMemoryShardDAO",
     "InMemoryStorageBackend",
+    "InjectedFaultError",
     "JsonDeterministicCodec",
     "MappingPayloadUpcaster",
     "ShardDAOContractTest",
