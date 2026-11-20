@@ -5,12 +5,10 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any
 
 from ..contracts.envelope import ShutdownReport
 from ..contracts.telemetry import TelemetryEvent, TelemetrySink
-from ..core.event_bus import EventDispatcher
-from ..core.projection import ProjectionRunner
+from .collaborators import ProjectionControl, SubscriberControl
 from .concurrency import ShardLockManager
 
 logger = logging.getLogger("storage_kernel.lifecycle")
@@ -23,8 +21,8 @@ class LifecycleManager:
         self,
         *,
         lock_manager: ShardLockManager,
-        projection_runner: ProjectionRunner[Any],
-        event_dispatcher: EventDispatcher,
+        projection_runner: ProjectionControl,
+        event_dispatcher: SubscriberControl,
         telemetry_sink: TelemetrySink | None = None,
     ) -> None:
         self._lock_manager = lock_manager
