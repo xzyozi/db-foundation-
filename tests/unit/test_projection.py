@@ -237,8 +237,10 @@ class _RunnerTestBase(unittest.TestCase):
         catchup_interval_sec: float,
         meta_dao: Any = None,
         retry_policy: RetryPolicy | None = None,
+        telemetry_sink: Any = None,
     ) -> ProjectionRunner[dict[str, Any]]:
         runner: ProjectionRunner[dict[str, Any]] = ProjectionRunner(
+            telemetry_sink=telemetry_sink,
             shard_dao=self.shard_dao,
             meta_dao=meta_dao if meta_dao is not None else self.meta_dao,
             dead_letter_port=None,
@@ -273,6 +275,132 @@ class TestPeriodicCatchup(_RunnerTestBase):
         self.kernel.append("poll:1", "tick", {"n": 1}, "idem-1", schema_version=1)
 
         self.assertFalse(_wait_until(lambda: len(proj.records_for("poll:1")) == 1, timeout=0.4))
+
+
+_SLOW_CALLER = "slow-caller"
+
+
+class _SlowListMetaDAO(InMemoryMetaDAO):
+    """スレッド名 `slow-caller` からの list_partitions だけを 0.3 秒遅延させる MetaDAO。"""
+
+    def __init__(self, store: Any) -> None:
+        super().__init__(store)
+        self.slow_entered = threading.Event()
+
+    def list_partitions(self) -> Any:
+        if threading.current_thread().name == _SLOW_CALLER:
+            self.slow_entered.set()
+            time.sleep(0.3)
+        return super().list_partitions()
+
+
+class TestDaoCallsOutsideLock(_RunnerTestBase):
+    """TR-DD2-008: 親 DAO（list_partitions）の呼び出し中も notify / register がブロックされない。"""
+
+    def _assert_not_blocked_while(self, slow_call: Any) -> None:
+        meta = _SlowListMetaDAO(self.store)
+        runner = self._new_runner(catchup_interval_sec=0.0, meta_dao=meta)
+        runner.register(InMemoryProjection[dict[str, Any]]("proj_a"))
+        ack = self.kernel.append("lock:1", "tick", {"n": 1}, "idem-1", schema_version=1)
+
+        slow = threading.Thread(target=lambda: slow_call(runner), name=_SLOW_CALLER, daemon=True)
+        slow.start()
+        self.addCleanup(slow.join, 2.0)
+        self.assertTrue(meta.slow_entered.wait(timeout=1.0))
+
+        started = time.monotonic()
+        runner.notify(ack.envelope)
+        runner.register(InMemoryProjection[dict[str, Any]]("proj_b"))
+        elapsed = time.monotonic() - started
+
+        self.assertLess(elapsed, 0.15, "list_partitions 実行中に notify/register がブロックされた")
+
+    def test_stop_drain_does_not_hold_lock_while_listing_partitions(self) -> None:
+        self._assert_not_blocked_while(lambda runner: runner.stop(drain=True, deadline=time.monotonic() + 3.0))
+
+    def test_maintenance_drain_does_not_hold_lock_while_listing_partitions(self) -> None:
+        self._assert_not_blocked_while(lambda runner: runner.enter_maintenance(drain=True, deadline=time.monotonic() + 3.0))
+
+
+class _AlwaysFailingCursorMetaDAO(InMemoryMetaDAO):
+    """fail_partition に対する get_cursor が常に例外を送出し、呼び出し回数を数える MetaDAO。"""
+
+    def __init__(self, store: Any, fail_partition: str) -> None:
+        super().__init__(store)
+        self.fail_partition = fail_partition
+        self.failing = True
+        self.fail_calls = 0
+
+    def get_cursor(self, consumer_id: str, partition_key: str) -> int:
+        if self.failing and partition_key == self.fail_partition:
+            self.fail_calls += 1
+            raise RuntimeError("meta dao is down")
+        return super().get_cursor(consumer_id, partition_key)
+
+
+class _ListSink:
+    """emit されたテレメトリイベントを保持するだけのシンク。"""
+
+    def __init__(self) -> None:
+        self.events: list[Any] = []
+
+    def emit(self, event: Any) -> None:
+        self.events.append(event)
+
+
+class TestUnexpectedFailureBackoff(_RunnerTestBase):
+    """TR-DD2-009: 想定外の例外はバックオフ付きで再投入され、上限到達で一時停止し、resume で再開できる。"""
+
+    def test_backoff_pause_and_resume_after_repeated_unexpected_errors(self) -> None:
+        meta = _AlwaysFailingCursorMetaDAO(self.store, "bad:1")
+        sink = _ListSink()
+        # 失敗 1〜3 回目の後の待機は 0.05 / 0.1 / 0.1 秒（4 回目の失敗で一時停止）
+        policy = RetryPolicy(max_attempts=4, initial_delay_sec=0.05, backoff_multiplier=2.0, max_delay_sec=0.1)
+        runner = self._new_runner(catchup_interval_sec=0.0, meta_dao=meta, retry_policy=policy, telemetry_sink=sink)
+        self.kernel.append("bad:1", "tick", {"n": 1}, "idem-b", schema_version=1)
+        self.kernel.append("good:1", "tick", {"n": 1}, "idem-g", schema_version=1)
+
+        proj = InMemoryProjection[dict[str, Any]]("proj_backoff")
+        started = time.monotonic()
+        runner.register(proj)
+
+        # 失敗中のパーティションがあっても、他のパーティションの投影は止まらない
+        self.assertTrue(_wait_until(lambda: len(proj.records_for("good:1")) == 1))
+        self.assertLess(time.monotonic() - started, 0.2)
+
+        worker = runner._workers["proj_backoff"]
+        self.assertTrue(_wait_until(lambda: "bad:1" in worker._paused_partitions))
+        elapsed = time.monotonic() - started
+        self.assertEqual(meta.fail_calls, 4)
+        self.assertGreaterEqual(elapsed, 0.2)  # 0.05 + 0.1 + 0.1 のバックオフを待っている
+
+        # 一時停止後は再選択されない（ビジーループにならない）
+        time.sleep(0.3)
+        self.assertEqual(meta.fail_calls, 4)
+        paused_events = [e for e in sink.events if e.name == "projection.partition_paused"]
+        self.assertEqual(len(paused_events), 1)
+        self.assertEqual(paused_events[0].attributes["partition_key"], "bad:1")
+
+        # 原因解消後に resume_projection 相当で再開できる
+        meta.failing = False
+        runner.resume_partition("proj_backoff", "bad:1")
+        self.assertTrue(_wait_until(lambda: len(proj.records_for("bad:1")) == 1))
+        self.assertEqual(meta.get_cursor("proj_backoff", "bad:1"), 1)
+
+    def test_success_resets_consecutive_failure_counter(self) -> None:
+        meta = _AlwaysFailingCursorMetaDAO(self.store, "bad:1")
+        policy = RetryPolicy(max_attempts=3, initial_delay_sec=0.1, backoff_multiplier=1.0, max_delay_sec=0.1)
+        runner = self._new_runner(catchup_interval_sec=0.0, meta_dao=meta, retry_policy=policy)
+        self.kernel.append("bad:1", "tick", {"n": 1}, "idem-b", schema_version=1)
+        proj = InMemoryProjection[dict[str, Any]]("proj_reset")
+        runner.register(proj)
+        worker = runner._workers["proj_reset"]
+
+        self.assertTrue(_wait_until(lambda: meta.fail_calls >= 2))
+        meta.failing = False  # 2 回失敗したところで回復（上限 3 には達しない）
+        self.assertTrue(_wait_until(lambda: len(proj.records_for("bad:1")) == 1))
+        self.assertTrue(_wait_until(lambda: "bad:1" not in worker._consecutive_failures))
+        self.assertNotIn("bad:1", worker._paused_partitions)
 
 
 if __name__ == "__main__":

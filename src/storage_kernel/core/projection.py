@@ -74,6 +74,9 @@ class _ProjectionWorker(Generic[T]):
         self._stop_event = threading.Event()
         self._catchup_interval_sec = catchup_interval_sec
         self._catchup_stop = threading.Event()
+        # 想定外の例外によるパーティション単位の連続失敗回数と、再選択を許可する時刻（time.monotonic）
+        self._consecutive_failures: dict[str, int] = {}
+        self._not_before: dict[str, float] = {}
 
         # 起動時キャッチアップ：既登録パーティションを Dirty Set へ初期投入
         self._dirty_partitions.update(self._list_matching_partition_keys())
@@ -141,19 +144,20 @@ class _ProjectionWorker(Generic[T]):
                     if next_rows:
                         self._meta_dao.advance_cursor(self.consumer_id, partition_key, next_rows[0].seq)
             self._paused_partitions.discard(partition_key)
+            self._consecutive_failures.pop(partition_key, None)
+            self._not_before.pop(partition_key, None)
             if self.matches(partition_key):
                 self._dirty_partitions.add(partition_key)
             self._cond.notify_all()
 
     def enter_maintenance_hold(self, *, drain: bool, deadline: float) -> bool:
         """メンテナンス用にカーソル更新を静止させる。"""
+        # 親の DAO 呼び出しはロックの外で行い、notify / register を待たせない
+        drain_keys = self._list_matching_partition_keys() if drain else []
         with self._cond:
             self._maintenance_hold = True
             self._maintenance_drain = drain
-            if drain:
-                for p in self._meta_dao.list_partitions():
-                    if self.matches(p.partition_key) and p.partition_key not in self._paused_partitions:
-                        self._dirty_partitions.add(p.partition_key)
+            self._dirty_partitions.update(k for k in drain_keys if k not in self._paused_partitions)
             self._cond.notify_all()
 
             while True:
@@ -178,13 +182,13 @@ class _ProjectionWorker(Generic[T]):
     def stop(self, *, drain: bool, deadline: float) -> tuple[tuple[str, ...], bool]:
         """ワーカーを停止し、(未処理パーティションタプル, タイムアウト内に完了したか) を返す。"""
         self._catchup_stop.set()
+        # 親の DAO 呼び出しはロックの外で行い、notify / register を待たせない
+        drain_keys = self._list_matching_partition_keys() if drain else []
         with self._cond:
             self._stop_requested = True
             self._stop_drain = drain
             if drain:
-                for p in self._meta_dao.list_partitions():
-                    if self.matches(p.partition_key) and p.partition_key not in self._paused_partitions:
-                        self._dirty_partitions.add(p.partition_key)
+                self._dirty_partitions.update(k for k in drain_keys if k not in self._paused_partitions)
             else:
                 self._stop_event.set()
             self._cond.notify_all()
@@ -212,6 +216,8 @@ class _ProjectionWorker(Generic[T]):
     def _pick_next_partition(self) -> str | None:
         with self._cond:
             while True:
+                if self._stop_event.is_set():
+                    return None
                 if self._stop_requested:
                     if not self._stop_drain or not self._dirty_partitions:
                         return None
@@ -220,16 +226,58 @@ class _ProjectionWorker(Generic[T]):
                         self._cond.wait(timeout=self._poll_interval_sec)
                         continue
 
+                now = time.monotonic()
                 candidates = sorted(self._dirty_partitions - self._paused_partitions)
-                if candidates:
-                    pk = candidates[0]
+                ready = [pk for pk in candidates if self._not_before.get(pk, 0.0) <= now]
+                if ready:
+                    pk = ready[0]
                     self._dirty_partitions.discard(pk)
                     self._in_cycle = True
                     return pk
 
-                if self._stop_requested and self._stop_drain:
+                if self._stop_requested and self._stop_drain and not candidates:
                     return None
-                self._cond.wait(timeout=self._poll_interval_sec)
+                # バックオフ中のパーティションがあれば、その解除時刻までだけ待つ（スレッドは他の仕事を妨げない）
+                wait_for = self._poll_interval_sec
+                if candidates:
+                    earliest = min(self._not_before.get(pk, 0.0) for pk in candidates)
+                    wait_for = max(0.001, min(wait_for, earliest - now))
+                self._cond.wait(timeout=wait_for)
+
+    def _register_unexpected_failure(self, pk: str) -> bool:
+        """想定外の例外を記録し、再投入すべきなら True を返す。
+
+        連続失敗が retry_policy.max_attempts に達したらパーティションを一時停止する。
+        それ未満なら指数バックオフ（not-before 時刻）を設定する。ワーカースレッドは待機しない。
+        """
+        with self._cond:
+            failures = self._consecutive_failures.get(pk, 0) + 1
+            if failures >= self._retry_policy.max_attempts:
+                self._consecutive_failures.pop(pk, None)
+                self._not_before.pop(pk, None)
+                self._paused_partitions.add(pk)
+                paused = True
+            else:
+                self._consecutive_failures[pk] = failures
+                self._not_before[pk] = time.monotonic() + self._retry_policy.delay_for_attempt(failures)
+                paused = False
+        if paused:
+            logger.error(
+                "Pausing partition after %d consecutive unexpected failures: consumer=%s partition=%s",
+                failures,
+                self.consumer_id,
+                pk,
+            )
+            self._emit_telemetry(
+                "projection.partition_paused",
+                {
+                    "consumer_id": self.consumer_id,
+                    "partition_key": pk,
+                    "reason": "consecutive_unexpected_failures",
+                    "failures": failures,
+                },
+            )
+        return not paused
 
     def _run(self) -> None:
         while True:
@@ -286,7 +334,11 @@ class _ProjectionWorker(Generic[T]):
                     self.consumer_id,
                     pk,
                 )
-                requeue = True
+                requeue = self._register_unexpected_failure(pk)
+            else:
+                with self._cond:
+                    self._consecutive_failures.pop(pk, None)
+                    self._not_before.pop(pk, None)
             finally:
                 with self._cond:
                     if requeue and pk not in self._paused_partitions:
