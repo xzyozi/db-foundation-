@@ -8,9 +8,8 @@ from typing import Any
 
 from storage_kernel import KernelConfig, StorageKernel
 from storage_kernel.contrib.sqlite import SqliteDeadLetterDAO, SqliteMetaDAO, SqliteShardDAO
-from storage_kernel.testing.memory_ports import JsonDeterministicCodec, SimplePartitionRouter
 
-from .adapters import ParentMaintenanceHooks, SqliteFts5Projection
+from .adapters import ParentHashRouter, ParentJsonCodec, ParentMaintenanceHooks, SqliteFts5Projection
 
 
 @dataclass(frozen=True)
@@ -25,7 +24,7 @@ class ParentAppRuntime:
 def build_parent_app(base_dir: str | Path) -> ParentAppRuntime:
     """StorageKernel に DAO / Codec / Projection / Hooks を DI 注入して起動する。"""
     root = Path(base_dir)
-    codec = JsonDeterministicCodec()
+    codec = ParentJsonCodec()
     meta_dao = SqliteMetaDAO(root / "meta.db")
     shard_dao = SqliteShardDAO[bytes](root / "shards", codec=None)
     dlq_dao = SqliteDeadLetterDAO[dict[str, Any]](root / "meta.db", codec=codec)
@@ -39,7 +38,7 @@ def build_parent_app(base_dir: str | Path) -> ParentAppRuntime:
         shard_dao=shard_dao,
         meta_dao=meta_dao,
         codec=codec,
-        router=SimplePartitionRouter(default_shards=4),
+        router=ParentHashRouter(shard_count=4),
         dead_letter_port=dlq_dao,
         maintenance_hooks=hooks,
         store_raw_bytes=True,

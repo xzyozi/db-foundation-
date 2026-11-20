@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+import hashlib
+import json
 import logging
 from pathlib import Path
 import sqlite3
@@ -13,6 +15,37 @@ from typing import Any
 from storage_kernel import RecordEnvelope
 
 logger = logging.getLogger(__name__)
+
+
+class ParentJsonCodec:
+    """親プロジェクトが持つ PayloadCodec の例。キー順を固定し、同じ値から常に同じバイト列を返す。
+
+    `storage_kernel.testing` は検証用の部品なので、親プロジェクトは本番の構成では使わず、自前で持つ。
+    """
+
+    def encode(self, value: dict[str, Any]) -> bytes:
+        return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+    def decode(self, data: bytes) -> dict[str, Any]:
+        loaded = json.loads(data.decode("utf-8"))
+        if not isinstance(loaded, dict):
+            raise TypeError(f"expected dict payload, got {type(loaded).__name__}")
+        return loaded
+
+
+class ParentHashRouter:
+    """親プロジェクトが持つ PartitionRouterPort の例。partition_key のハッシュで固定数のシャードへ割り当てる。"""
+
+    def __init__(self, shard_count: int = 4) -> None:
+        if shard_count < 1:
+            raise ValueError("shard_count must be >= 1")
+        self._shard_count = shard_count
+
+    def select_shard(self, partition_key: str, *, preferred_shard: str | None = None) -> str:
+        if preferred_shard is not None:
+            return preferred_shard
+        digest = hashlib.blake2b(partition_key.encode("utf-8"), digest_size=4).digest()
+        return f"shard_{int.from_bytes(digest, 'big') % self._shard_count}"
 
 
 @contextmanager
