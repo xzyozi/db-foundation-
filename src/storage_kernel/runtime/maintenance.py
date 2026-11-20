@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
 
 from ..contracts.errors import KernelClosedError
 from ..contracts.telemetry import TelemetryEvent, TelemetrySink
-from ..core.projection import ProjectionRunner
 from ..ports.maintenance import MaintenanceHooks
+from .collaborators import ProjectionControl
 from .concurrency import ShardLockManager
 
 logger = logging.getLogger("storage_kernel.maintenance")
@@ -22,7 +21,7 @@ class MaintenanceCoordinator:
         self,
         *,
         lock_manager: ShardLockManager,
-        projection_runner: ProjectionRunner[Any],
+        projection_runner: ProjectionControl,
         maintenance_hooks: MaintenanceHooks | None = None,
         telemetry_sink: TelemetrySink | None = None,
     ) -> None:
