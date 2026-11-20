@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import time
 from typing import Any, Iterator
 import unittest
 
@@ -17,6 +18,7 @@ from storage_kernel.contracts.errors import (
 from storage_kernel.core.kernel import StorageKernel
 from storage_kernel.testing.memory_ports import (
     InMemoryMetaDAO,
+    InMemoryProjection,
     InMemoryShardDAO,
     InMemoryStorageBackend,
     JsonDeterministicCodec,
@@ -77,6 +79,15 @@ class TestWriteIngestion(unittest.TestCase):
 
         self.assertGreater(ctx.exception.size, 64)
         self.assertEqual(ctx.exception.limit, 64)
+
+        # write_snapshot にも同じ上限が適用され、拒否されても seq は進まない
+        with self.assertRaises(PayloadTooLarge) as snap_ctx:
+            kernel.write_snapshot(
+                "order:2", {"k": "x" * 100}, "idem-snap-big", covers_through_seq=1, schema_version=1
+            )
+        self.assertGreater(snap_ctx.exception.size, 64)
+        self.assertEqual(snap_ctx.exception.limit, 64)
+
         ack2 = kernel.append("order:2", "tick", {"k": "ok2"}, "idem-ok2", schema_version=1)
         self.assertEqual(ack2.envelope.seq, 2)
         self.assertEqual(len(store.records[(ack2.shard_id, "order:2")]), 2)
@@ -111,6 +122,20 @@ class TestWriteIngestion(unittest.TestCase):
         shard_dao = InMemoryShardDAO(store)
         rows = list(shard_dao.fetch_range(ack.shard_id, "order:5", after_seq=0, limit=10))
         self.assertEqual(len(rows), 1)
+
+        # 読み取り（sync）は read_only でも動く
+        synced = kernel.sync({"order:5": 0})
+        self.assertEqual([r.seq for r in synced["order:5"]], [1])
+
+        # Projection の追いつきも read_only のパーティションに対して動く
+        projection = InMemoryProjection[dict[str, Any]]("proj_read_only")
+        kernel.register_projection(projection)
+        self.addCleanup(kernel.close)
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline and len(projection.records_for("order:5")) < 1:
+            time.sleep(0.01)
+        self.assertEqual([r.seq for r in projection.records_for("order:5")], [1])
+        self.assertEqual(kernel._meta_dao.get_cursor("proj_read_only", "order:5"), 1)
 
     def test_write_snapshot_covers_through_seq_validation(self) -> None:
         """TR-DD1-006: covers_through_seq が最終 seq を超えると拒否され、正常範囲なら保存される。"""

@@ -96,6 +96,11 @@ class TestMaintenance(unittest.TestCase):
             with self.assertRaises(KernelMaintenanceError):
                 kernel.append("m:1", "tick", {"v": 2}, "idem-2", schema_version=1)
 
+            # カーソル更新（resume_projection(skip_current=True)）も拒否され、カーソルは進まない
+            with self.assertRaises(KernelMaintenanceError):
+                kernel.resume_projection("proj_maint", "m:1", skip_current=True)
+            self.assertEqual(meta_dao.get_cursor("proj_maint", "m:1"), 0)
+
             kernel.exit_maintenance()
             self.assertEqual(events[-1], "exit")
 
