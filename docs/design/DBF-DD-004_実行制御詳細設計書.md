@@ -5,7 +5,7 @@ document_number: "DBF-DD-004"
 document_role: "normative"
 ssot_scope: "module_behavior"
 status: "approved"
-version: "1.3"
+version: "1.4"
 created_at: "2026-11-19"
 updated_at: "2026-11-20"
 author: "xzyozi"
@@ -55,12 +55,12 @@ related_documents:
 
 ### 2.1 対象機能一覧
 
-| 機能ID | 関数・機能名                                                       | 呼び出し元                                                                                      | 主な呼び出し先                                                                                            |         同期 / 非同期          |                          冪等性                           | 外部副作用                                               |            公開範囲             |
-| :----- | :----------------------------------------------------------------- | :---------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------- | :----------------------------: | :-------------------------------------------------------: | :------------------------------------------------------- | :-----------------------------: |
-| F-401  | `ShardLockManager.partition_write_guard` & キャッシュ同期          | `WritePipeline` (`DBF-DD-001` `F-101`, `F-102`), `StorageKernel.set_partition_status` (`F-103`) | `LifecycleManager` 状態確認, パーティション別 `RLock`, ルーティングキャッシュ更新                         | 同期（コンテキストマネージャ） |                 なし（ロック獲得・解放）                  | インメモリロック獲得とアクティブ Writer カウンタ増減     | 外部公開（`IF-006` の排他基盤） |
-| F-402  | `StorageKernel.enter_maintenance` / `MaintenanceCoordinator.enter` | 親プロジェクト運用・バックアップ機能                                                            | `ShardLockManager` バリア待機, `ProjectionRunner.pause_or_drain`, `MaintenanceHooks.on_enter_maintenance` |              同期              |      なし（重複呼び出しは `KernelMaintenanceError`）      | 全更新操作の遮断と `on_enter_maintenance` フック呼び出し |      外部公開（`IF-007`）       |
-| F-403  | `StorageKernel.exit_maintenance` / `MaintenanceCoordinator.exit`   | 親プロジェクト運用・バックアップ機能                                                            | `MaintenanceHooks.on_exit_maintenance`, `ShardLockManager` バリア解除, `ProjectionRunner` 再開起床        |              同期              |                あり（通常運転中は無操作）                 | `on_exit_maintenance` フック呼び出しと更新遮断の解除     |      外部公開（`IF-008`）       |
-| F-404  | `StorageKernel.close` / `LifecycleManager.shutdown`                | 親プロジェクト Lifecycle 管理                                                                   | `ShardLockManager` 新規遮断・進行中待機, `ProjectionRunner.stop`, `EventDispatcher.stop`                  |              同期              | あり（2回目以降はキャッシュ済み `ShutdownReport` を返却） | 全ワーカースレッドの停止と残キュー破棄/ドレイン          |      外部公開（`IF-010`）       |
+| 機能ID | 関数・機能名                                                       | 呼び出し元                                                                                      | 主な呼び出し先                                                                                               |         同期 / 非同期          |                          冪等性                           | 外部副作用                                               |            公開範囲             |
+| :----- | :----------------------------------------------------------------- | :---------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------- | :----------------------------: | :-------------------------------------------------------: | :------------------------------------------------------- | :-----------------------------: |
+| F-401  | `ShardLockManager.partition_write_guard` & キャッシュ同期          | `WritePipeline` (`DBF-DD-001` `F-101`, `F-102`), `StorageKernel.set_partition_status` (`F-103`) | `LifecycleManager` 状態確認, パーティション別 `RLock`, ルーティングキャッシュ更新                            | 同期（コンテキストマネージャ） |                 なし（ロック獲得・解放）                  | インメモリロック獲得とアクティブ Writer カウンタ増減     | 外部公開（`IF-006` の排他基盤） |
+| F-402  | `StorageKernel.enter_maintenance` / `MaintenanceCoordinator.enter` | 親プロジェクト運用・バックアップ機能                                                            | `ShardLockManager` バリア待機, `ProjectionRunner.enter_maintenance`, `MaintenanceHooks.on_enter_maintenance` |              同期              |      なし（重複呼び出しは `KernelMaintenanceError`）      | 全更新操作の遮断と `on_enter_maintenance` フック呼び出し |      外部公開（`IF-007`）       |
+| F-403  | `StorageKernel.exit_maintenance` / `MaintenanceCoordinator.exit`   | 親プロジェクト運用・バックアップ機能                                                            | `MaintenanceHooks.on_exit_maintenance`, `ShardLockManager` バリア解除, `ProjectionRunner` 再開起床           |              同期              |                あり（通常運転中は無操作）                 | `on_exit_maintenance` フック呼び出しと更新遮断の解除     |      外部公開（`IF-008`）       |
+| F-404  | `StorageKernel.close` / `LifecycleManager.shutdown`                | 親プロジェクト Lifecycle 管理                                                                   | `ShardLockManager` 新規遮断・進行中待機, `ProjectionRunner.stop`, `EventDispatcher.stop`                     |              同期              | あり（2回目以降はキャッシュ済み `ShutdownReport` を返却） | 全ワーカースレッドの停止と残キュー破棄/ドレイン          |      外部公開（`IF-010`）       |
 
 ### 2.2 主要関数・機能の契約
 
@@ -309,3 +309,4 @@ sequenceDiagram
 | Rev.1.1 | 2026-11-20 | xzyozi | `resume_projection(skip_current=True)` を `partition_write_guard` 内で行う契約、メンテナンス中の `subscribe`（許可）と `register_projection`（拒否）の扱い、close 後の拒否を明記し、`TR-DD4-005`・`006` を追加（Issue #40） |
 | Rev.1.2 | 2026-11-20 | xzyozi | Issue #37 に基づき runtime から core への依存を解消し、`runtime/collaborators.py` の Protocol 経由で注入する旨を追記                                                                                                        |
 | Rev.1.3 | 2026-11-20 | xzyozi | v1.0.0 リリース準備に伴い、状態を `draft` から `approved` へ変更（実装・レビューを経て現在の正本とする）                                                                                                                    |
+| Rev.1.4 | 2026-11-20 | xzyozi | F-402 の呼び出し先に残っていた実在しない名前 `ProjectionRunner.pause_or_drain` を、実装のメソッド名 `ProjectionRunner.enter_maintenance` に修正                                                                             |
