@@ -30,7 +30,7 @@
 
 - v1 は単一プロセス（マルチスレッド）のみ対応します。別プロセスから DB へ直接書き込まないことは、親プロジェクトが守る制約です。
 - `catchup_interval_sec` は `ProjectionRunner` の引数で、`StorageKernel` と `KernelConfig` からは変更できません（既定 5.0 秒）。
-- `DBF-DD-004` の F-402 に、実在しない名前 `ProjectionRunner.pause_or_drain` の記述が残っています。
+- `DBF-DD-004` の F-402 に、実在しない名前 `ProjectionRunner.pause_or_drain` の記述が残っています（`[未リリース]` で修正済み）。
 
 ### v2 以降に回したもの
 
@@ -40,3 +40,10 @@
 - `append_batch()`
 - IPC 配信口（`ports/transport.py`）
 - `ephemeral`・`guard`
+
+## [未リリース]
+
+### 修正
+
+- `DBF-DD-004`（Rev.1.4）: F-402 の呼び出し先に残っていた実在しない名前 `ProjectionRunner.pause_or_drain` を、実装のメソッド名 `ProjectionRunner.enter_maintenance` に修正
+- `docs/setup/git_flow_and_branch_policy.md`: リリース手順 6 を、`release/` ではなく `main` を `develop` へ取り込む形に修正（早送りで済む場合を明記）
