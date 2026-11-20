@@ -5,9 +5,9 @@ document_number: "DBF-IF-001"
 document_role: "normative"
 ssot_scope: "external_interface"
 status: "draft"
-version: "1.0"
+version: "1.1"
 created_at: "2026-11-19"
-updated_at: "2026-11-19"
+updated_at: "2026-11-20"
 author: "xzyozi"
 owner: "xzyozi"
 purpose: "親プロジェクトと storage_kernel のあいだで合意する外部インターフェース契約（公開API、Port/SPI、契約型・標準例外、互換性、および13項目のContract Test要件）を定義し、境界を越える受け渡しの不整合を防ぐため"
@@ -180,6 +180,25 @@ related_documents:
 | `CursorExpiredError` | `partition_key: str`, `cursor_seq: int`, `oldest_retained_seq: int` | 保持範囲より古いカーソルで `sync` / `fetch_range` を呼んだ場合（※v1 では Retention を行わないため送出されない。v2 互換のため契約のみ先行定義） | 条件付き（最新の `__snapshot__` から再開する） |
 | `SchemaVersionError` | なし | 書き込み時に `schema_registry` の最新版と一致しない、または読み取り時に未知の新しい `schema_version` や Upcast 変換経路の欠落を検出した場合 | 不可（`schema_registry` または `PayloadUpcaster` の修正が必要） |
 
+### 2.5 コンストラクタ引数（`StorageKernel(...)`）
+
+`StorageKernel` は、すべてキーワード専用引数で組み立てる（`Composition Root` が DAO などを注入する）。
+
+| 引数 | データ型 | 必須性 | 既定値 | 用途 |
+| :--- | :--- | :---: | :--- | :--- |
+| `config` | `KernelConfig` | 必須 | なし | `schema_registry`、`max_payload_bytes`、`default_retry_policy` を保持する設定 |
+| `shard_dao` | `ShardDAOPort[Any]` | 必須 | なし | シャード DB へのレコード永続化 |
+| `meta_dao` | `MetaDAOPort` | 必須 | なし | パーティション台帳・カーソルの永続化 |
+| `codec` | `PayloadCodec[T]` | 必須 | なし | ペイロードと `bytes` の相互変換 |
+| `router` | `PartitionRouterPort` | 必須 | なし | `partition_key` からシャードへのルーティング |
+| `upcaster` | `PayloadUpcaster \| None` | 任意 | `None` | 旧版レコードの読み取り時 Upcast |
+| `dead_letter_port` | `DeadLetterPort[T] \| None` | 任意 | `None` | Poison Pill の DLQ 隔離（`failure_policy="dlq_and_skip"` の前提） |
+| `maintenance_hooks` | `MaintenanceHooks \| None` | 任意 | `None` | メンテナンス移行・解除のフック |
+| `telemetry_sink` | `TelemetrySink \| None` | 任意 | `None` | テレメトリの出力先 |
+| `store_raw_bytes` | `bool` | 任意 | `False` | `True` のとき、`codec.encode` 後の `bytes` を `ShardDAOPort` へ保存し（`RecordEnvelope.payload` に `bytes` が入る）、読み出し時に `codec.decode` で `T` へ戻す。`False` のときは `T` のオブジェクトをそのまま `ShardDAOPort` へ渡す |
+
+`store_raw_bytes=True` は、ペイロードを `bytes` として保存する DAO（例: `codec=None` で組み立てた SQLite シャード DAO のように、自前でシリアライズせずに `bytes` を BLOB 列へ書く実装）と組み合わせる。DAO がオブジェクトを自分で直列化できる場合は `False`（既定）のままでよい。保存形式と DAO の型が食い違うと読み出し時にデコードできないため、`Composition Root` で DAO と同時に決める。
+
 ---
 
 ## 3. 認証・認可
@@ -276,6 +295,7 @@ related_documents:
 - **冪等性**: なし（呼び出しごとに新しい `subscription_id` を持つ独立した有界キューと購読ハンドルを生成する）。
 - **事前条件 / 事後条件**:
   - **事前条件**: `pattern` が許可された3パターン（完全一致、`*`、末尾 `:*`）のいずれかであること。`max_queue_size >= 1` であること。
+  - **メンテナンス中の扱い**: `subscribe` は永続状態（レコード・カーソル・台帳）を変えないため、メンテナンス中（`enter_maintenance`〜`exit_maintenance`）も登録できる。`KernelMaintenanceError` は送出しない。`close()` 開始後は `KernelClosedError` で拒否する。
   - **事後条件**: 購読者専用の有界キューが割り当てられ、`SubscriptionHandle` が返る。`__snapshot__` レコードは配信されない。コールバック内で発生した例外は他の購読者や Projection を止めず、ログ・telemetry・`on_error` に通知される。
 
 #### 4.3.1 リクエスト / 引数
@@ -316,6 +336,8 @@ related_documents:
   - `resume_projection`: 条件付き冪等（既に稼働中のパーティションに対する `skip_current=False` 呼び出しは何もしない）。
 - **事前条件 / 事後条件**:
   - `failure_policy` 省略時（`None`）は、`StorageKernel` に `DeadLetterPort` が注入されていれば `"dlq_and_skip"`、注入されていなければ `"pause_partition"` が自動選択される。
+  - `register_projection` は Projection がカーソルを更新するため、メンテナンス中は `KernelMaintenanceError` で拒否する（カーソル更新を遮断する `IF-007` の趣旨に沿う）。
+  - `resume_projection`: `skip_current=True` のとき、パーティション状態の確認とカーソル更新を書き込みガードの中で行い、進行中の更新として `enter_maintenance` に待たれる。`skip_current=False` はカーソルを更新しないため、メンテナンス中でも呼べる。どちらも `close()` 開始後は `KernelClosedError` になる。
   - `include_snapshots=False`（既定）のとき `__snapshot__` は `apply_batch` から除外されカーソルのみ通過する。`include_snapshots=True` のときのみ `apply_batch` に渡される。
   - `resume_projection(..., skip_current=True)` の場合、停止原因となった先頭1件（Poison Pill）の `seq` まで `MetaDAOPort.advance_cursor` でカーソルを進めてから投影を再開する。
 
@@ -345,7 +367,7 @@ related_documents:
 | :--- | :--- | :--- | :--- | :--- |
 | `ValueError` | 重複 `consumer_id`、未登録 `consumer_id`、`DeadLetterPort` 未注入状態で `failure_policy="dlq_and_skip"` を明示指定、不正パターン、`batch_size < 1` | 例外送出 | 設定または引数を修正する | 不可 |
 | `KernelClosedError` | `close()` 開始後に呼ばれた | 例外送出 | 処理を中止する | 不可 |
-| `KernelMaintenanceError` | メンテナンスモード中に `resume_projection(..., skip_current=True)` でカーソル更新を伴う再開を呼んだ場合 | 例外送出 | `exit_maintenance()` 後に再実行する | 条件付き |
+| `KernelMaintenanceError` | メンテナンスモード中に `register_projection`、またはカーソル更新を伴う `resume_projection(..., skip_current=True)` を呼んだ場合（`subscribe` と `skip_current=False` の再開は対象外） | 例外送出 | `exit_maintenance()` 後に再実行する | 条件付き |
 
 ---
 
@@ -591,3 +613,4 @@ related_documents:
 | 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                                           |
 | :------ | :--------- | :----- | :--------------------------------------------------------------------------------- |
 | Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #13 に基づき公開API、Port/SPI、契約型・例外、Contract Test 13項目を制定） |
+| Rev.1.1 | 2026-11-20 | xzyozi | コンストラクタ引数（`store_raw_bytes` を含む）の節を追加し、メンテナンス中の `subscribe`（許可）・`register_projection`（拒否）、`resume_projection` の close 後の扱いを明記（Issue #40） |
