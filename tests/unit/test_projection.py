@@ -11,6 +11,8 @@ import unittest
 from storage_kernel.contracts.envelope import (
     SNAPSHOT_RECORD_TYPE,
     KernelConfig,
+    PartitionInfo,
+    PartitionStatus,
     RecordEnvelope,
     RetryPolicy,
 )
@@ -287,11 +289,11 @@ class _SlowListMetaDAO(InMemoryMetaDAO):
         super().__init__(store)
         self.slow_entered = threading.Event()
 
-    def list_partitions(self) -> Any:
+    def list_partitions(self, *, status: PartitionStatus | None = None) -> Sequence[PartitionInfo]:
         if threading.current_thread().name == _SLOW_CALLER:
             self.slow_entered.set()
             time.sleep(0.3)
-        return super().list_partitions()
+        return super().list_partitions(status=status)
 
 
 class TestDaoCallsOutsideLock(_RunnerTestBase):

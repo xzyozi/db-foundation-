@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from contextlib import nullcontext
 import logging
 import threading
 import time
@@ -16,6 +17,7 @@ from ..contracts.envelope import (
 from ..contracts.errors import SchemaVersionError
 from ..contracts.telemetry import TelemetryEvent, TelemetrySink
 from ..ports.dao import DeadLetterPort, MetaDAOPort, ProjectionPort, ShardDAOPort
+from ..runtime.concurrency import ShardLockManager
 from .event_bus import PatternMatcher
 from .reliability import DeadLetterCoordinator
 
@@ -47,7 +49,9 @@ class _ProjectionWorker(Generic[T]):
         telemetry_sink: TelemetrySink | None,
         poll_interval_sec: float = 0.25,
         catchup_interval_sec: float = 0.0,
+        lock_manager: ShardLockManager | None = None,
     ) -> None:
+        self._lock_manager = lock_manager
         self.projection = projection
         self.consumer_id = projection.consumer_id
         self._matchers = matchers
@@ -130,25 +134,38 @@ class _ProjectionWorker(Generic[T]):
 
     def resume_partition(self, partition_key: str, *, skip_current: bool) -> None:
         """一時停止中のパーティションを再開する（skip_current=True で先頭 1 件をスキップ）。"""
+        if skip_current:
+            # 状態確認からカーソル更新までを書き込みガードの中で行い、enter_maintenance の
+            # 整合点確立（進行中の更新の完了待ち）より後にカーソルが進まないようにする。
+            guard = (
+                self._lock_manager.partition_write_guard(partition_key)
+                if self._lock_manager is not None
+                else nullcontext()
+            )
+            with guard:
+                self._skip_next_record(partition_key)
         with self._cond:
-            if skip_current:
-                info = self._meta_dao.get_partition(partition_key)
-                if info is not None:
-                    current_seq = self._meta_dao.get_cursor(self.consumer_id, partition_key)
-                    next_rows = self._shard_dao.fetch_range(
-                        info.shard_id,
-                        partition_key,
-                        after_seq=current_seq,
-                        limit=1,
-                    )
-                    if next_rows:
-                        self._meta_dao.advance_cursor(self.consumer_id, partition_key, next_rows[0].seq)
             self._paused_partitions.discard(partition_key)
             self._consecutive_failures.pop(partition_key, None)
             self._not_before.pop(partition_key, None)
             if self.matches(partition_key):
                 self._dirty_partitions.add(partition_key)
             self._cond.notify_all()
+
+    def _skip_next_record(self, partition_key: str) -> None:
+        """カーソル直後の 1 件までカーソルを進める（該当レコードがなければ何もしない）。"""
+        info = self._meta_dao.get_partition(partition_key)
+        if info is None:
+            return
+        current_seq = self._meta_dao.get_cursor(self.consumer_id, partition_key)
+        next_rows = self._shard_dao.fetch_range(
+            info.shard_id,
+            partition_key,
+            after_seq=current_seq,
+            limit=1,
+        )
+        if next_rows:
+            self._meta_dao.advance_cursor(self.consumer_id, partition_key, next_rows[0].seq)
 
     def enter_maintenance_hold(self, *, drain: bool, deadline: float) -> bool:
         """メンテナンス用にカーソル更新を静止させる。"""
@@ -360,7 +377,9 @@ class ProjectionRunner(Generic[T]):
         decode_record_fn: Callable[[RecordEnvelope[Any]], RecordEnvelope[T]],
         telemetry_sink: TelemetrySink | None = None,
         catchup_interval_sec: float = DEFAULT_CATCHUP_INTERVAL_SEC,
+        lock_manager: ShardLockManager | None = None,
     ) -> None:
+        self._lock_manager = lock_manager
         self._catchup_interval_sec = catchup_interval_sec
         self._shard_dao = shard_dao
         self._meta_dao = meta_dao
@@ -418,6 +437,7 @@ class ProjectionRunner(Generic[T]):
                 decode_record_fn=self._decode_record_fn,
                 telemetry_sink=self._telemetry_sink,
                 catchup_interval_sec=self._catchup_interval_sec,
+                lock_manager=self._lock_manager,
             )
             self._workers[projection.consumer_id] = worker
 
