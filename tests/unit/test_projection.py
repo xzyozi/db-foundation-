@@ -15,6 +15,7 @@ from storage_kernel.contracts.envelope import (
     RetryPolicy,
 )
 from storage_kernel.core.kernel import StorageKernel
+from storage_kernel.core.projection import ProjectionRunner
 from storage_kernel.testing.memory_ports import (
     InMemoryDeadLetter,
     InMemoryMetaDAO,
@@ -212,6 +213,66 @@ class TestProjection(unittest.TestCase):
             [r.record_type for r in proj_with_snap.records_for("snap:1")],
             ["tick", SNAPSHOT_RECORD_TYPE, "tick"],
         )
+
+
+class _RunnerTestBase(unittest.TestCase):
+    """ProjectionRunner を StorageKernel 経由の通知なしで直接組み立てるテストの共通土台。"""
+
+    def setUp(self) -> None:
+        self.store: InMemoryStorageBackend[dict[str, Any]] = InMemoryStorageBackend()
+        self.shard_dao = InMemoryShardDAO(self.store)
+        self.meta_dao = InMemoryMetaDAO(self.store)
+        self.kernel: StorageKernel[dict[str, Any]] = StorageKernel(
+            config=KernelConfig(schema_registry={"tick": 1}),
+            shard_dao=self.shard_dao,
+            meta_dao=self.meta_dao,
+            codec=JsonDeterministicCodec(),
+            router=SimplePartitionRouter(),
+        )
+        self.addCleanup(self.kernel.close)
+
+    def _new_runner(
+        self,
+        *,
+        catchup_interval_sec: float,
+        meta_dao: Any = None,
+        retry_policy: RetryPolicy | None = None,
+    ) -> ProjectionRunner[dict[str, Any]]:
+        runner: ProjectionRunner[dict[str, Any]] = ProjectionRunner(
+            shard_dao=self.shard_dao,
+            meta_dao=meta_dao if meta_dao is not None else self.meta_dao,
+            dead_letter_port=None,
+            default_retry_policy=retry_policy or RetryPolicy(max_attempts=2, initial_delay_sec=0.005, max_delay_sec=0.01),
+            decode_record_fn=self.kernel._upcast_pipeline.upcast_and_decode_envelope,
+            catchup_interval_sec=catchup_interval_sec,
+        )
+        self.addCleanup(runner.stop, drain=False)
+        return runner
+
+
+class TestPeriodicCatchup(_RunnerTestBase):
+    """TR-DD2-007: 通知を経由しない書き込みが定期ポーリングで Projection に届く。"""
+
+    def test_periodic_catchup_delivers_records_without_notify(self) -> None:
+        runner = self._new_runner(catchup_interval_sec=0.05)
+        proj = InMemoryProjection[dict[str, Any]]("proj_periodic")
+        runner.register(proj)
+
+        # kernel の通知は別の ProjectionRunner に向かうため、runner は notify されない
+        self.kernel.append("poll:1", "tick", {"n": 1}, "idem-1", schema_version=1)
+        self.kernel.append("poll:1", "tick", {"n": 2}, "idem-2", schema_version=1)
+
+        self.assertTrue(_wait_until(lambda: len(proj.records_for("poll:1")) == 2))
+        self.assertEqual(self.meta_dao.get_cursor("proj_periodic", "poll:1"), 2)
+
+    def test_catchup_disabled_when_interval_is_not_positive(self) -> None:
+        runner = self._new_runner(catchup_interval_sec=0.0)
+        proj = InMemoryProjection[dict[str, Any]]("proj_no_periodic")
+        runner.register(proj)
+
+        self.kernel.append("poll:1", "tick", {"n": 1}, "idem-1", schema_version=1)
+
+        self.assertFalse(_wait_until(lambda: len(proj.records_for("poll:1")) == 1, timeout=0.4))
 
 
 if __name__ == "__main__":

@@ -23,6 +23,9 @@ T = TypeVar("T")
 
 logger = logging.getLogger("storage_kernel.projection")
 
+DEFAULT_CATCHUP_INTERVAL_SEC = 5.0
+"""定期追いつき（Dirty Set への全パーティション再投入）の既定間隔（秒）。0 以下で無効。"""
+
 
 class _ProjectionWorker(Generic[T]):
     """単一 ProjectionPort を駆動する独立ワーカースレッド。"""
@@ -43,6 +46,7 @@ class _ProjectionWorker(Generic[T]):
         decode_record_fn: Callable[[RecordEnvelope[Any]], RecordEnvelope[T]],
         telemetry_sink: TelemetrySink | None,
         poll_interval_sec: float = 0.25,
+        catchup_interval_sec: float = 0.0,
     ) -> None:
         self.projection = projection
         self.consumer_id = projection.consumer_id
@@ -68,11 +72,11 @@ class _ProjectionWorker(Generic[T]):
         self._stop_requested = False
         self._stop_drain = False
         self._stop_event = threading.Event()
+        self._catchup_interval_sec = catchup_interval_sec
+        self._catchup_stop = threading.Event()
 
         # 起動時キャッチアップ：既登録パーティションを Dirty Set へ初期投入
-        for p in self._meta_dao.list_partitions():
-            if self.matches(p.partition_key):
-                self._dirty_partitions.add(p.partition_key)
+        self._dirty_partitions.update(self._list_matching_partition_keys())
 
         self._thread = threading.Thread(
             target=self._run,
@@ -80,6 +84,33 @@ class _ProjectionWorker(Generic[T]):
             daemon=True,
         )
         self._thread.start()
+
+        self._catchup_thread: threading.Thread | None = None
+        if catchup_interval_sec > 0.0:
+            self._catchup_thread = threading.Thread(
+                target=self._catchup_loop,
+                name=f"sk-proj-catchup-{self.consumer_id[:12]}",
+                daemon=True,
+            )
+            self._catchup_thread.start()
+
+    def _list_matching_partition_keys(self) -> list[str]:
+        """登録パターンに一致する全パーティションキーを取得する（ロックを持たずに呼ぶこと）。"""
+        return [p.partition_key for p in self._meta_dao.list_partitions() if self.matches(p.partition_key)]
+
+    def _catchup_loop(self) -> None:
+        """catchup_interval_sec ごとに全一致パーティションを Dirty Set へ再投入する（F-206 定期ポーリング）。"""
+        while not self._catchup_stop.wait(timeout=self._catchup_interval_sec):
+            try:
+                keys = self._list_matching_partition_keys()
+            except Exception:
+                logger.exception("Periodic catch-up listing failed: consumer=%s", self.consumer_id)
+                continue
+            with self._cond:
+                if self._stop_requested or self._maintenance_hold:
+                    continue
+                self._dirty_partitions.update(k for k in keys if k not in self._paused_partitions)
+                self._cond.notify_all()
 
     def matches(self, partition_key: str) -> bool:
         return any(m.matches(partition_key) for m in self._matchers)
@@ -146,6 +177,7 @@ class _ProjectionWorker(Generic[T]):
 
     def stop(self, *, drain: bool, deadline: float) -> tuple[tuple[str, ...], bool]:
         """ワーカーを停止し、(未処理パーティションタプル, タイムアウト内に完了したか) を返す。"""
+        self._catchup_stop.set()
         with self._cond:
             self._stop_requested = True
             self._stop_drain = drain
@@ -275,7 +307,9 @@ class ProjectionRunner(Generic[T]):
         default_retry_policy: RetryPolicy,
         decode_record_fn: Callable[[RecordEnvelope[Any]], RecordEnvelope[T]],
         telemetry_sink: TelemetrySink | None = None,
+        catchup_interval_sec: float = DEFAULT_CATCHUP_INTERVAL_SEC,
     ) -> None:
+        self._catchup_interval_sec = catchup_interval_sec
         self._shard_dao = shard_dao
         self._meta_dao = meta_dao
         self._dead_letter_port = dead_letter_port
@@ -331,6 +365,7 @@ class ProjectionRunner(Generic[T]):
                 coordinator=self._coordinator,
                 decode_record_fn=self._decode_record_fn,
                 telemetry_sink=self._telemetry_sink,
+                catchup_interval_sec=self._catchup_interval_sec,
             )
             self._workers[projection.consumer_id] = worker
 
