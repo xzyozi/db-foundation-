@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import time
@@ -49,6 +49,19 @@ class StorageKernelContractTest(unittest.TestCase, Generic[T]):
     def make_dao(self) -> DAOContractBundle[T]:
         """同じストレージバックエンドを指す新しい Port インスタンス群を返すフック。"""
         raise unittest.SkipTest("Override make_dao() in a concrete ContractTest subclass.")
+
+    def projected_seqs(self, projection: ProjectionPort[T], partition_key: str) -> Sequence[int]:
+        """指定パーティションについて Projection が保持している ``seq`` を 1 件 1 要素で返すフック（10 番用）。
+
+        ``ProjectionPort`` には状態の読み戻し口がないため、親プロジェクトが実装する。
+        同じ ``seq`` を重複して保持している場合は、その件数分だけ同じ値を含めて返すこと。
+        未実装（既定）のときは TR-IF-010 を黙って通さず ``NotImplementedError`` で失敗する。
+        """
+        raise NotImplementedError(
+            "Override projected_seqs(projection, partition_key) in the ContractTest subclass: "
+            "return the seq of every row the projection holds for partition_key "
+            "(one element per stored row, duplicates included)."
+        )
 
     @staticmethod
     def _envelope(
@@ -104,36 +117,42 @@ class StorageKernelContractTest(unittest.TestCase, Generic[T]):
     def test_02_persistence_across_reconnect(self) -> None:
         """TR-IF-002: 再生成した DAO インスタンスから直前の書き込み・バインド・カーソルが読めること。"""
         bundle1 = self.make_dao()
-        if bundle1.shard_dao.durability == "none" and bundle1.meta_dao.durability == "none":
+        check_shard = bundle1.shard_dao.durability != "none"
+        check_meta = bundle1.meta_dao.durability != "none"
+        if not check_shard and not check_meta:
             self.skipTest("durability='none' のため再接続永続性テストをスキップします")
 
         pk = "contract:persist"
         shard_id = "shard_0"
-        bundle1.meta_dao.bind_shard(pk, shard_id)
-        bundle1.meta_dao.advance_cursor("consumer-1", pk, 1)
+        if check_meta:
+            bundle1.meta_dao.bind_shard(pk, shard_id)
+            bundle1.meta_dao.advance_cursor("consumer-1", pk, 1)
 
-        with bundle1.shard_dao.write_transaction(shard_id) as tx:
-            seq = tx.next_sequence(pk)
-            tx.insert_record(
-                self._envelope(
-                    partition_key=pk,
-                    seq=seq,
-                    idempotency_key="idem-persist",
-                    payload=bundle1.make_payload(42),
-                    payload_hash="hash-42",
+        if check_shard:
+            with bundle1.shard_dao.write_transaction(shard_id) as tx:
+                seq = tx.next_sequence(pk)
+                tx.insert_record(
+                    self._envelope(
+                        partition_key=pk,
+                        seq=seq,
+                        idempotency_key="idem-persist",
+                        payload=bundle1.make_payload(42),
+                        payload_hash="hash-42",
+                    )
                 )
-            )
 
         bundle2 = self.make_dao()
-        info = bundle2.meta_dao.get_partition(pk)
-        self.assertIsNotNone(info)
-        assert info is not None
-        self.assertEqual(info.shard_id, shard_id)
-        self.assertEqual(bundle2.meta_dao.get_cursor("consumer-1", pk), 1)
-        rows = list(bundle2.shard_dao.fetch_range(shard_id, pk, after_seq=0, limit=10))
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0].seq, 1)
-        self.assertEqual(rows[0].payload_hash, "hash-42")
+        if check_meta:
+            info = bundle2.meta_dao.get_partition(pk)
+            self.assertIsNotNone(info)
+            assert info is not None
+            self.assertEqual(info.shard_id, shard_id)
+            self.assertEqual(bundle2.meta_dao.get_cursor("consumer-1", pk), 1)
+        if check_shard:
+            rows = list(bundle2.shard_dao.fetch_range(shard_id, pk, after_seq=0, limit=10))
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0].seq, 1)
+            self.assertEqual(rows[0].payload_hash, "hash-42")
 
     def test_03_monotonic_sequence_and_fetch_order(self) -> None:
         """TR-IF-003: 連続・並行書き込みで seq が 1, 2, ... と欠番なく採番され昇順取得できること。"""
@@ -141,6 +160,25 @@ class StorageKernelContractTest(unittest.TestCase, Generic[T]):
         pk = "contract:monotonic"
         shard_id = "shard_0"
         total = 20
+
+        # 連続書き込み: 同一スレッドで N 件。seq は 1..N の欠番・重複なし。
+        seq_pk = "contract:monotonic_seq"
+        sequential: list[int] = []
+        for idx in range(total):
+            with bundle.shard_dao.write_transaction(shard_id) as tx:
+                seq = tx.next_sequence(seq_pk)
+                tx.insert_record(
+                    self._envelope(
+                        partition_key=seq_pk,
+                        seq=seq,
+                        idempotency_key=f"idem-seq-{idx}",
+                        payload=bundle.make_payload(idx),
+                    )
+                )
+                sequential.append(seq)
+        self.assertEqual(sequential, list(range(1, total + 1)))
+        seq_rows = list(bundle.shard_dao.fetch_range(shard_id, seq_pk, after_seq=0, limit=total + 5))
+        self.assertEqual([r.seq for r in seq_rows], list(range(1, total + 1)))
 
         def _write_one(idx: int) -> int:
             with bundle.shard_dao.write_transaction(shard_id) as tx:
@@ -180,15 +218,24 @@ class StorageKernelContractTest(unittest.TestCase, Generic[T]):
                 )
             )
 
+        # 再送: 既存があれば採番も挿入もしない（カーネルの冪等ヒット経路と同じ手順）。
         with bundle.shard_dao.write_transaction(shard_id) as tx:
             found = tx.find_by_idempotency(pk, "idem-same")
             self.assertIsNotNone(found)
             assert found is not None
             self.assertEqual(found.seq, 1)
             self.assertEqual(found.payload_hash, "hash-100")
+            self.assertEqual(found.payload, bundle.make_payload(100))
 
         rows = list(bundle.shard_dao.fetch_range(shard_id, pk, after_seq=0, limit=10))
         self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].seq, 1)
+        self.assertEqual(rows[0].payload_hash, "hash-100")
+        self.assertEqual(rows[0].payload, bundle.make_payload(100))
+
+        # 再送後も最終 seq は 1 のまま。次の新規書き込みは seq=2 になる。
+        with bundle.shard_dao.write_transaction(shard_id) as tx:
+            self.assertEqual(tx.next_sequence(pk), 2)
 
     def test_05_unique_violation_raises_duplicate_key_error(self) -> None:
         """TR-IF-005: 一意制約違反時に DB 固有例外でなく DuplicateKeyError が送出されること。"""
@@ -216,7 +263,7 @@ class StorageKernelContractTest(unittest.TestCase, Generic[T]):
                         payload=bundle.make_payload(2),
                     )
                 )
-        self.assertIn(seq_ctx.exception.kind, ("sequence", "unknown"))
+        self.assertEqual(seq_ctx.exception.kind, "sequence")
 
         with self.assertRaises(DuplicateKeyError) as idem_ctx:
             with bundle.shard_dao.write_transaction(shard_id) as tx:
@@ -228,7 +275,7 @@ class StorageKernelContractTest(unittest.TestCase, Generic[T]):
                         payload=bundle.make_payload(2),
                     )
                 )
-        self.assertIn(idem_ctx.exception.kind, ("idempotency_key", "unknown"))
+        self.assertEqual(idem_ctx.exception.kind, "idempotency_key")
 
     def test_06_idempotency_scope_isolated_by_partition(self) -> None:
         """TR-IF-006: partition_key が異なれば同じ idempotency_key でも独立して seq=1 から書き込めること。"""
@@ -323,6 +370,11 @@ class StorageKernelContractTest(unittest.TestCase, Generic[T]):
         ]
         bundle.projection.apply_batch(batch)
         bundle.projection.apply_batch(batch)
+        self.assertEqual(
+            sorted(self.projected_seqs(bundle.projection, "contract:proj")),
+            [1, 2],
+            "同じバッチの再適用で (partition_key, seq) が重複・欠落しています",
+        )
 
     def test_11_payload_codec_deterministic_encode(self) -> None:
         """TR-IF-011: 論理的に等価な値を encode したとき常に同一バイト列を返すこと。"""
