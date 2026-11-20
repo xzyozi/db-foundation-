@@ -4,10 +4,10 @@ document_type: "environment_specification"
 document_number: "DBF-ENV-001"
 document_role: "normative"
 ssot_scope: "environment"
-status: "draft"
-version: "1.2"
+status: "approved"
+version: "1.3"
 created_at: "2026-11-19"
-updated_at: "2026-11-19"
+updated_at: "2026-11-20"
 author: "xzyozi"
 owner: "xzyozi"
 purpose: "storage_kernel の開発・検証・実行環境について、変更できない条件、必要なツールチェーン、品質ゲート（QG-001〜QG-006）、およびサブモジュール配布仕様を定義するため"
@@ -52,11 +52,11 @@ related_documents:
 
 ## 3. 環境概要
 
-| 環境 | 用途 | プラットフォーム / 実行方式 | 所有者 | 更新・廃止方針 |
-| :--- | :--- | :--- | :--- | :--- |
-| ローカル開発環境 | 設計書編集、コード実装、単体テスト、Contract Test、手動ベンチマークの実行 | macOS / Linux / Windows 上のローカル Python 環境（`uv` による `.venv` 管理） | 各開発者 | `.python-version`（`3.12`）と `pyproject.toml` に追従する |
-| CI 検証環境 | PR・ブランチ push 時の静的解析、型検査、テスト、文書・Mermaid 検証の自動実行 | GitHub Actions（`ubuntu-latest`、Python 3.12、Node.js 22.14.0） | リポジトリ管理者 | `.github/workflows/` の定義に従って自動プロビジョニングする |
-| 親プロジェクト組み込み環境 | 親プロジェクトの `libs/storage_kernel` 等に Git サブモジュールとして配置して本番・テスト稼働 | 親プロジェクトの Python（`>=3.10`）同一プロセス空間 | 親プロジェクト責任者 | セマンティックバージョニングの Git タグ固定で更新する |
+| 環境                       | 用途                                                                                         | プラットフォーム / 実行方式                                                  | 所有者               | 更新・廃止方針                                              |
+| :------------------------- | :------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------- | :------------------- | :---------------------------------------------------------- |
+| ローカル開発環境           | 設計書編集、コード実装、単体テスト、Contract Test、手動ベンチマークの実行                    | macOS / Linux / Windows 上のローカル Python 環境（`uv` による `.venv` 管理） | 各開発者             | `.python-version`（`3.12`）と `pyproject.toml` に追従する   |
+| CI 検証環境                | PR・ブランチ push 時の静的解析、型検査、テスト、文書・Mermaid 検証の自動実行                 | GitHub Actions（`ubuntu-latest`、Python 3.12、Node.js 22.14.0）              | リポジトリ管理者     | `.github/workflows/` の定義に従って自動プロビジョニングする |
+| 親プロジェクト組み込み環境 | 親プロジェクトの `libs/storage_kernel` 等に Git サブモジュールとして配置して本番・テスト稼働 | 親プロジェクトの Python（`>=3.10`）同一プロセス空間                          | 親プロジェクト責任者 | セマンティックバージョニングの Git タグ固定で更新する       |
 
 ## 4. 適用する環境要素
 
@@ -95,14 +95,14 @@ related_documents:
 
 GitHub Actions により、`main` および `develop` ブランチへの `push` / `pull_request` 時に自動検証を実行する。品質ゲートは下表を正本とし、BD・DD・DS・IF・テスト文書からはゲート ID（`QG-001`〜`QG-006`）で参照する。
 
-| ゲートID | 検証種別 | 実行コマンドまたはワークフロー | 適用条件 | 合格基準 |
-| :--- | :--- | :--- | :--- | :--- |
-| QG-001 | 静的解析（Lint） | `uv run --no-sync ruff check .`（`.github/workflows/ci-python.yml`） | Python コード変更時、および `main` / `develop` への PR・push 時 | 指摘エラー・警告が 0 件であること |
-| QG-002 | コードフォーマット検査 | `uv run --no-sync ruff format --check .`（`.github/workflows/ci-python.yml`） | Python コード変更時、および `main` / `develop` への PR・push 時 | フォーマット未適用ファイルが 0 件であること |
-| QG-003 | 静的型検査（Type Check） | `uv run --no-sync mypy .`（`.github/workflows/ci-python.yml`） | Python パッケージ実装後、`main` / `develop` への PR・push 時 | `pyproject.toml` の `[tool.mypy]`（strict 設定）のもとで型エラーが 0 件であること |
-| QG-004 | 単体テスト・契約テスト・境界テスト | `uv run --no-sync pytest`（`.github/workflows/ci-python.yml`） | テスト存在時、`main` / `develop` への PR・push 時（In-Memory と SQLite 参照実装の双方で Contract Test 13項目を含む全テストを実行） | 全テストケースがパス（失敗 0 件）し、`core/` が `contrib/` や外部パッケージを import していないこと |
-| QG-005 | ドキュメント規約検証 | `python .github/scripts/validate_docs.py docs README.md`（`.github/workflows/validate-docs.yml`） | `docs/**/*.md` または `README.md` の変更時 | エラーが 0 件（終了コード `0`）であること |
-| QG-006 | Mermaid 図レンダリング検証 | `node .github/scripts/validateMermaidMarkdown.mjs`（`.github/workflows/validate-mermaid.yml`） | `docs/**/*.md` または `README.md` の変更時 | 変更された全 Mermaid コードブロックが構文エラーなく SVG にレンダリングできること |
+| ゲートID | 検証種別                           | 実行コマンドまたはワークフロー                                                                    | 適用条件                                                                                                                           | 合格基準                                                                                            |
+| :------- | :--------------------------------- | :------------------------------------------------------------------------------------------------ | :--------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------- |
+| QG-001   | 静的解析（Lint）                   | `uv run --no-sync ruff check .`（`.github/workflows/ci-python.yml`）                              | Python コード変更時、および `main` / `develop` への PR・push 時                                                                    | 指摘エラー・警告が 0 件であること                                                                   |
+| QG-002   | コードフォーマット検査             | `uv run --no-sync ruff format --check .`（`.github/workflows/ci-python.yml`）                     | Python コード変更時、および `main` / `develop` への PR・push 時                                                                    | フォーマット未適用ファイルが 0 件であること                                                         |
+| QG-003   | 静的型検査（Type Check）           | `uv run --no-sync mypy .`（`.github/workflows/ci-python.yml`）                                    | Python パッケージ実装後、`main` / `develop` への PR・push 時                                                                       | `pyproject.toml` の `[tool.mypy]`（strict 設定）のもとで型エラーが 0 件であること                   |
+| QG-004   | 単体テスト・契約テスト・境界テスト | `uv run --no-sync pytest`（`.github/workflows/ci-python.yml`）                                    | テスト存在時、`main` / `develop` への PR・push 時（In-Memory と SQLite 参照実装の双方で Contract Test 13項目を含む全テストを実行） | 全テストケースがパス（失敗 0 件）し、`core/` が `contrib/` や外部パッケージを import していないこと |
+| QG-005   | ドキュメント規約検証               | `python .github/scripts/validate_docs.py docs README.md`（`.github/workflows/validate-docs.yml`） | `docs/**/*.md` または `README.md` の変更時                                                                                         | エラーが 0 件（終了コード `0`）であること                                                           |
+| QG-006   | Mermaid 図レンダリング検証         | `node .github/scripts/validateMermaidMarkdown.mjs`（`.github/workflows/validate-mermaid.yml`）    | `docs/**/*.md` または `README.md` の変更時                                                                                         | 変更された全 Mermaid コードブロックが構文エラーなく SVG にレンダリングできること                    |
 
 #### ミューテーションテスト（`mutmut` v3）の扱い
 
@@ -127,12 +127,12 @@ GitHub Actions により、`main` および `develop` ブランチへの `push` 
 
 ## 5. 検証方法
 
-| 確認項目 | 確認方法 | 合格条件 | 証跡 |
-| :--- | :--- | :--- | :--- |
-| ドキュメントメタデータ・リンク整合性 | `python3 .github/scripts/validate_docs.py docs README.md` を実行する | `エラー 0 件` が表示され終了コード `0` で完了すること | CI ジョブ `Validate docs` の実行ログ |
-| Mermaid 図の構文・描画妥当性 | CI 上で `validateMermaidMarkdown.mjs` を実行する | 対象 Markdown 内の全 Mermaid 図がエラーなく変換されること | CI ジョブ `Validate Mermaid diagrams` の実行ログ |
-| Python 静的解析・型検査・単体/契約テスト | `uv sync --dev` 後、`QG-001`〜`QG-004` の各コマンドを実行する | 全コマンドが終了コード `0` で完了すること | CI ジョブ `Python Checks` の実行ログ |
-| 親プロジェクト DAO の契約適合性 | 親プロジェクト側で `ShardDAOContractTest` を継承したテストクラスを `unittest` または `pytest` で実行する | 13項目の Contract Test がすべてパスすること | 親プロジェクトのテスト実行ログ |
+| 確認項目                                 | 確認方法                                                                                                 | 合格条件                                                  | 証跡                                             |
+| :--------------------------------------- | :------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------- | :----------------------------------------------- |
+| ドキュメントメタデータ・リンク整合性     | `python3 .github/scripts/validate_docs.py docs README.md` を実行する                                     | `エラー 0 件` が表示され終了コード `0` で完了すること     | CI ジョブ `Validate docs` の実行ログ             |
+| Mermaid 図の構文・描画妥当性             | CI 上で `validateMermaidMarkdown.mjs` を実行する                                                         | 対象 Markdown 内の全 Mermaid 図がエラーなく変換されること | CI ジョブ `Validate Mermaid diagrams` の実行ログ |
+| Python 静的解析・型検査・単体/契約テスト | `uv sync --dev` 後、`QG-001`〜`QG-004` の各コマンドを実行する                                            | 全コマンドが終了コード `0` で完了すること                 | CI ジョブ `Python Checks` の実行ログ             |
+| 親プロジェクト DAO の契約適合性          | 親プロジェクト側で `ShardDAOContractTest` を継承したテストクラスを `unittest` または `pytest` で実行する | 13項目の Contract Test がすべてパスすること               | 親プロジェクトのテスト実行ログ                   |
 
 ## 6. 例外・適用差異
 
@@ -157,8 +157,9 @@ GitHub Actions により、`main` および `develop` ブランチへの `push` 
 
 ## 9. 改訂履歴 (Change Log)
 
-| 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                       |
-| :------ | :--------- | :----- | :------------------------------------------------------------- |
-| Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #12 に基づき環境仕様と品質ゲート QG-001〜006 を制定） |
+| 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                                                                                                                          |
+| :------ | :--------- | :----- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #12 に基づき環境仕様と品質ゲート QG-001〜006 を制定）                                                                                             |
 | Rev.1.1 | 2026-11-19 | xzyozi | `[dependency-groups]`（`dev` / `mutation`）への移行、ミューテーションテスト位置づけ追加、および `.py` 不在時 `mypy` スキップ対応に伴う `EX-002` 解消（Issue #22） |
-| Rev.1.2 | 2026-11-19 | xzyozi | `pyproject.toml` の `storage-kernel` 化・`src` レイアウト設定に伴う `EX-001` 解消（Issue #24） |
+| Rev.1.2 | 2026-11-19 | xzyozi | `pyproject.toml` の `storage-kernel` 化・`src` レイアウト設定に伴う `EX-001` 解消（Issue #24）                                                                    |
+| Rev.1.3 | 2026-11-20 | xzyozi | v1.0.0 リリース準備に伴い、状態を `draft` から `approved` へ変更（品質ゲート QG-001〜006 を現在の正本とする）                                                     |

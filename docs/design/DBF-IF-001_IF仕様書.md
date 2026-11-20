@@ -4,8 +4,8 @@ document_type: "interface_specification"
 document_number: "DBF-IF-001"
 document_role: "normative"
 ssot_scope: "external_interface"
-status: "draft"
-version: "1.2"
+status: "approved"
+version: "1.3"
 created_at: "2026-11-19"
 updated_at: "2026-11-20"
 author: "xzyozi"
@@ -615,3 +615,4 @@ related_documents:
 | Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #13 に基づき公開API、Port/SPI、契約型・例外、Contract Test 13項目を制定）                                                                                                 |
 | Rev.1.1 | 2026-11-20 | xzyozi | コンストラクタ引数（`store_raw_bytes` を含む）の節を追加し、メンテナンス中の `subscribe`（許可）・`register_projection`（拒否）、`resume_projection` の close 後の扱いを明記（Issue #40） |
 | Rev.1.2 | 2026-11-20 | xzyozi | Contract Test の表を実装と同じ強さに改訂（Issue #38）。TR-IF-010 に `projected_seqs` フックを追加し、TR-IF-002 のスキップ条件を shard/meta 別に分離、TR-IF-003〜005 の基準を強化          |
+| Rev.1.3 | 2026-11-20 | xzyozi | v1.0.0 リリース準備に伴い、状態を `draft` から `approved` へ変更（実装・レビューを経て現在の正本とする）                                                                                  |

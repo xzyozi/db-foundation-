@@ -4,10 +4,10 @@ document_type: "data_structure_specification"
 document_number: "DBF-DS-001"
 document_role: "normative"
 ssot_scope: "persistent_data"
-status: "draft"
-version: "1.0"
+status: "approved"
+version: "1.1"
 created_at: "2026-11-19"
-updated_at: "2026-11-19"
+updated_at: "2026-11-20"
 author: "xzyozi"
 owner: "xzyozi"
 purpose: "親プロジェクトのDAOおよび参照実装が永続化すべきデータの論理スキーマ、保存状態、不変条件、耐久性水準、原子性と排他制御、スキーマ版移行、およびバックアップ対象を定義するため"
@@ -62,16 +62,16 @@ related_documents:
 
 システム内のデータを「永続化が必須の正本データ」と「プロセス再起動時に破棄・再構築される揮発データ」に明確に分類する（Issue #2 B2）。物理ファイルの配置先は親プロジェクトの DAO（または `contrib/sqlite/` の `base_dir`）が管理する。
 
-| データ種別 | 永続化区分 | 論理配置先 / 参照実装ファイル例 | 保持内容 | 所有者・アクセス境界 | 保持・バックアップ・復旧方針 |
-| :--- | :---: | :--- | :--- | :--- | :--- |
-| パーティション台帳 (`PARTITION_LEDGER`) | **永続**（Source of Truth） | メタストレージ（例: `meta.db`） | `partition_key` と格納先 `shard_id` の不変バインド、および `status`（`active` / `read_only`） | `MetaDAOPort` 実装（単一プロセス占有） | 無期限保持。バックアップ必須対象（シャードと同一世代で取得） |
-| 進捗カーソル (`CONSUMER_CURSOR`) | **永続**（Source of Truth） | メタストレージ（例: `meta.db`） | `(consumer_id, partition_key)` ごとの最終適用済み `last_seq` | `MetaDAOPort` 実装（単一プロセス占有） | 無期限保持。バックアップ必須対象（Projection 再構築時は新規 `consumer_id` で再生） |
-| パーティション連番・レコード本体 (`PARTITION_SEQUENCE`, `SHARD_RECORD`) | **永続**（Source of Truth） | シャードストレージ群（例: `shard_0.db`〜`shard_N.db`） | パーティション別最新連番と、通常レコードおよび `__snapshot__` レコード | `ShardDAOPort` 実装（単一プロセス占有） | v1 は無期限保持（Retention は v2）。全シャードがバックアップ必須対象 |
-| Dead Letter (`DEAD_LETTER`) | **永続**（任意 Port 導入時） | メタまたは専用 DLQ ストレージ（例: `meta.db`） | Projection のリトライ上限を超えた Poison Pill レコードと失敗原因 | `DeadLetterPort` 実装 | 運用者が原因解消・再処理するまで保持。バックアップ対象に含める |
-| 非同期投影ビュー (`PROJECTION_VIEW`) | **派生永続**（再構築可能） | 投影ストレージ（例: `projection.db`） | FTS5 全文検索インデックスや集計マテビューなど、親が管理する参照特化データ | `ProjectionPort` 実装 | シャードの `seq=0` または最新 `__snapshot__` から再構築可能。第4.2節の4条件をすべて満たす場合のみバックアップ対象から除外可 |
-| ルーティングキャッシュ | **非永続**（メモリ揮発） | プロセス内メモリ（`runtime/`・`core/`） | `partition_key -> PartitionInfo` のインメモリ辞書 | `StorageKernel` プロセス内 | 再起動時に破棄し、`MetaDAOPort.get_partition` / `list_partitions` から再ロードする |
-| Event Bus 有界キュー | **非永続**（メモリ揮発） | プロセス内メモリ（`core/event_bus.py`） | `subscribe` 購読者ごとの未配信イベントキュー | `EventDispatcher` | At-Most-Once のため再起動・`close()` 時に破棄する |
-| Projection Dirty Set | **非永続**（メモリ揮発） | プロセス内メモリ（`core/projection.py`） | Fast Path キュー溢れや通知取りこぼしが発生した `partition_key` の集合 | `ProjectionRunner` | 再起動時に破棄。起動時は `MetaDAOPort.list_partitions` と `get_cursor` から全パーティションの未処理差分を `fetch_range` で自動走査して追いつく |
+| データ種別                                                              |          永続化区分          | 論理配置先 / 参照実装ファイル例                        | 保持内容                                                                                      | 所有者・アクセス境界                    | 保持・バックアップ・復旧方針                                                                                                                   |
+| :---------------------------------------------------------------------- | :--------------------------: | :----------------------------------------------------- | :-------------------------------------------------------------------------------------------- | :-------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------- |
+| パーティション台帳 (`PARTITION_LEDGER`)                                 | **永続**（Source of Truth）  | メタストレージ（例: `meta.db`）                        | `partition_key` と格納先 `shard_id` の不変バインド、および `status`（`active` / `read_only`） | `MetaDAOPort` 実装（単一プロセス占有）  | 無期限保持。バックアップ必須対象（シャードと同一世代で取得）                                                                                   |
+| 進捗カーソル (`CONSUMER_CURSOR`)                                        | **永続**（Source of Truth）  | メタストレージ（例: `meta.db`）                        | `(consumer_id, partition_key)` ごとの最終適用済み `last_seq`                                  | `MetaDAOPort` 実装（単一プロセス占有）  | 無期限保持。バックアップ必須対象（Projection 再構築時は新規 `consumer_id` で再生）                                                             |
+| パーティション連番・レコード本体 (`PARTITION_SEQUENCE`, `SHARD_RECORD`) | **永続**（Source of Truth）  | シャードストレージ群（例: `shard_0.db`〜`shard_N.db`） | パーティション別最新連番と、通常レコードおよび `__snapshot__` レコード                        | `ShardDAOPort` 実装（単一プロセス占有） | v1 は無期限保持（Retention は v2）。全シャードがバックアップ必須対象                                                                           |
+| Dead Letter (`DEAD_LETTER`)                                             | **永続**（任意 Port 導入時） | メタまたは専用 DLQ ストレージ（例: `meta.db`）         | Projection のリトライ上限を超えた Poison Pill レコードと失敗原因                              | `DeadLetterPort` 実装                   | 運用者が原因解消・再処理するまで保持。バックアップ対象に含める                                                                                 |
+| 非同期投影ビュー (`PROJECTION_VIEW`)                                    |  **派生永続**（再構築可能）  | 投影ストレージ（例: `projection.db`）                  | FTS5 全文検索インデックスや集計マテビューなど、親が管理する参照特化データ                     | `ProjectionPort` 実装                   | シャードの `seq=0` または最新 `__snapshot__` から再構築可能。第4.2節の4条件をすべて満たす場合のみバックアップ対象から除外可                    |
+| ルーティングキャッシュ                                                  |   **非永続**（メモリ揮発）   | プロセス内メモリ（`runtime/`・`core/`）                | `partition_key -> PartitionInfo` のインメモリ辞書                                             | `StorageKernel` プロセス内              | 再起動時に破棄し、`MetaDAOPort.get_partition` / `list_partitions` から再ロードする                                                             |
+| Event Bus 有界キュー                                                    |   **非永続**（メモリ揮発）   | プロセス内メモリ（`core/event_bus.py`）                | `subscribe` 購読者ごとの未配信イベントキュー                                                  | `EventDispatcher`                       | At-Most-Once のため再起動・`close()` 時に破棄する                                                                                              |
+| Projection Dirty Set                                                    |   **非永続**（メモリ揮発）   | プロセス内メモリ（`core/projection.py`）               | Fast Path キュー溢れや通知取りこぼしが発生した `partition_key` の集合                         | `ProjectionRunner`                      | 再起動時に破棄。起動時は `MetaDAOPort.list_partitions` と `get_cursor` から全パーティションの未処理差分を `fetch_range` で自動走査して追いつく |
 
 ---
 
@@ -137,59 +137,59 @@ erDiagram
 
 各論理エンティティのフィールド名、データ型、必須性、NULL可否、既定値、制約条件、および互換性ルールを下表に定義する。
 
-| エンティティ / フィールド名 | 論理データ型 | 必須性 | NULL可 | デフォルト値 | 許容値・制約条件 | 互換性・移行メモ |
-| :--- | :--- | :---: | :---: | :--- | :--- | :--- |
-| `PARTITION_LEDGER.partition_key` | 文字列 (`str`) | 必須 | 不可 | なし | 主キー（PK）。非空 UTF-8 文字列 | 不変 |
-| `PARTITION_LEDGER.shard_id` | 文字列 (`str`) | 必須 | 不可 | なし | 非空文字列。初回 `bind_shard` で確定した後は**不変** | v2 でパーティション移動を導入するまで更新禁止 |
-| `PARTITION_LEDGER.status` | 文字列 (`str`) | 必須 | 不可 | `"active"` | `"active"` または `"read_only"` のみ（v1） | v2 で `"migrating"` を追加予定 |
-| `PARTITION_LEDGER.created_at` | 浮動小数点 (`float`) | 必須 | 不可 | なし | UTC エポック秒（`> 0`） | 初回登録時の時刻を保持 |
-| `CONSUMER_CURSOR.consumer_id` | 文字列 (`str`) | 必須 | 不可 | なし | 複合主キー（PK1）。`ProjectionPort.consumer_id` 等 | Projection 再構築時は新世代 ID を採番 |
-| `CONSUMER_CURSOR.partition_key` | 文字列 (`str`) | 必須 | 不可 | なし | 複合主キー（PK2）。対象パーティションキー | - |
-| `CONSUMER_CURSOR.last_seq` | 整数 (`int`) | 必須 | 不可 | `0` | `>= 0`。**単調非減少（`MAX(current, seq)`）** | 後退（小さい値での上書き）は厳禁 |
-| `CONSUMER_CURSOR.updated_at` | 浮動小数点 (`float`) | 必須 | 不可 | なし | 最終更新 UTC エポック秒 | - |
-| `PARTITION_SEQUENCE.partition_key` | 文字列 (`str`) | 必須 | 不可 | なし | 主キー（PK）。シャード内のパーティション識別子 | `SHARD_RECORD` の `MAX(seq)` で代替実装してもよいが、ロールバック原子性を満たすこと |
-| `PARTITION_SEQUENCE.last_seq` | 整数 (`int`) | 必須 | 不可 | `0` | 初回採番で `1`、以降 `+1` ずつ厳密単調増加（欠番なし） | トランザクション失敗時は採番増分もロールバックされること |
-| `SHARD_RECORD.partition_key` | 文字列 (`str`) | 必須 | 不可 | なし | 複合主キー（PK1）かつ複合一意制約（UK1）の第1列 | パーティション間で冪等キースコープを分離 |
-| `SHARD_RECORD.seq` | 整数 (`int`) | 必須 | 不可 | なし | 複合主キー（PK2）。`>= 1`、パーティション内で連番・欠番なし | 一意制約違反時は `DuplicateKeyError(kind="sequence")` |
-| `SHARD_RECORD.idempotency_key` | 文字列 (`str`) | 必須 | 不可 | なし | `(partition_key, idempotency_key)` で複合一意制約（UK1） | 一意制約違反時は `DuplicateKeyError(kind="idempotency_key")` |
-| `SHARD_RECORD.record_type` | 文字列 (`str`) | 必須 | 不可 | なし | 非空文字列。`"__"` 始まりはシステム予約（`__snapshot__` 等） | - |
-| `SHARD_RECORD.schema_version` | 整数 (`int`) | 必須 | 不可 | なし | `>= 1`。書き込み時点の `schema_registry[record_type]` | 保存後は書き換えず、読み取り時に Upcast する |
-| `SHARD_RECORD.payload_hash` | 文字列 (`str`) | 必須 | 不可 | なし | 64文字の16進文字列（SHA-256）。長さプレフィックス付き `(record_type, schema_version, raw_payload)` から算出 | 保存時の元データのハッシュ。Upcast 後も決して再計算・上書きしない |
-| `SHARD_RECORD.raw_payload` | バイト列 (`bytes`) または文字列 | 必須 | 不可 | なし | `PayloadCodec.encode` の出力。最大 **64 KB（65,536 bytes）** | スナップショット（`__snapshot__`）にも同じ 64 KB 上限を適用 |
-| `SHARD_RECORD.created_at` | 浮動小数点 (`float`) | 必須 | 不可 | なし | 書き込みトランザクション開始時の UTC エポック秒 | - |
-| `SHARD_RECORD.covers_through_seq` | 整数 (`int`) | 任意 | 可 | `NULL` (`None`) | `record_type == "__snapshot__"` のときのみ非 NULL 必須（`1 <= covers_through_seq <= 当該時点の最終seq`）。通常レコードは NULL | v2 の Retention 削除境界算出の基準値となる |
-| `DEAD_LETTER.consumer_id` | 文字列 (`str`) | 必須 | 不可 | なし | 複合主キー（PK1）。失敗した Projection の識別子 | - |
-| `DEAD_LETTER.partition_key` / `seq` | 文字列 / 整数 | 必須 | 不可 | なし | 複合主キー（PK2, PK3）。隔離されたレコードの識別子 | 同一 Poison Pill の再隔離に対して冪等（上書きまたは維持） |
-| `DEAD_LETTER.idempotency_key`〜`covers_through_seq` | （`SHARD_RECORD` と同一） | 必須 | 条件付 | なし | 原因となった `RecordEnvelope` の全属性を保持する | - |
-| `DEAD_LETTER.error_type` / `error_message` | 文字列 (`str`) | 必須 | 不可 | なし | 最終失敗時の例外型名とエラーメッセージ | - |
-| `DEAD_LETTER.attempts` | 整数 (`int`) | 必須 | 不可 | なし | 実行された試行回数（`>= 1`） | - |
-| `DEAD_LETTER.failed_at` | 浮動小数点 (`float`) | 必須 | 不可 | なし | DLQ 格納時の UTC エポック秒 | - |
+| エンティティ / フィールド名                         | 論理データ型                    | 必須性 | NULL可 | デフォルト値    | 許容値・制約条件                                                                                                              | 互換性・移行メモ                                                                    |
+| :-------------------------------------------------- | :------------------------------ | :----: | :----: | :-------------- | :---------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------- |
+| `PARTITION_LEDGER.partition_key`                    | 文字列 (`str`)                  |  必須  |  不可  | なし            | 主キー（PK）。非空 UTF-8 文字列                                                                                               | 不変                                                                                |
+| `PARTITION_LEDGER.shard_id`                         | 文字列 (`str`)                  |  必須  |  不可  | なし            | 非空文字列。初回 `bind_shard` で確定した後は**不変**                                                                          | v2 でパーティション移動を導入するまで更新禁止                                       |
+| `PARTITION_LEDGER.status`                           | 文字列 (`str`)                  |  必須  |  不可  | `"active"`      | `"active"` または `"read_only"` のみ（v1）                                                                                    | v2 で `"migrating"` を追加予定                                                      |
+| `PARTITION_LEDGER.created_at`                       | 浮動小数点 (`float`)            |  必須  |  不可  | なし            | UTC エポック秒（`> 0`）                                                                                                       | 初回登録時の時刻を保持                                                              |
+| `CONSUMER_CURSOR.consumer_id`                       | 文字列 (`str`)                  |  必須  |  不可  | なし            | 複合主キー（PK1）。`ProjectionPort.consumer_id` 等                                                                            | Projection 再構築時は新世代 ID を採番                                               |
+| `CONSUMER_CURSOR.partition_key`                     | 文字列 (`str`)                  |  必須  |  不可  | なし            | 複合主キー（PK2）。対象パーティションキー                                                                                     | -                                                                                   |
+| `CONSUMER_CURSOR.last_seq`                          | 整数 (`int`)                    |  必須  |  不可  | `0`             | `>= 0`。**単調非減少（`MAX(current, seq)`）**                                                                                 | 後退（小さい値での上書き）は厳禁                                                    |
+| `CONSUMER_CURSOR.updated_at`                        | 浮動小数点 (`float`)            |  必須  |  不可  | なし            | 最終更新 UTC エポック秒                                                                                                       | -                                                                                   |
+| `PARTITION_SEQUENCE.partition_key`                  | 文字列 (`str`)                  |  必須  |  不可  | なし            | 主キー（PK）。シャード内のパーティション識別子                                                                                | `SHARD_RECORD` の `MAX(seq)` で代替実装してもよいが、ロールバック原子性を満たすこと |
+| `PARTITION_SEQUENCE.last_seq`                       | 整数 (`int`)                    |  必須  |  不可  | `0`             | 初回採番で `1`、以降 `+1` ずつ厳密単調増加（欠番なし）                                                                        | トランザクション失敗時は採番増分もロールバックされること                            |
+| `SHARD_RECORD.partition_key`                        | 文字列 (`str`)                  |  必須  |  不可  | なし            | 複合主キー（PK1）かつ複合一意制約（UK1）の第1列                                                                               | パーティション間で冪等キースコープを分離                                            |
+| `SHARD_RECORD.seq`                                  | 整数 (`int`)                    |  必須  |  不可  | なし            | 複合主キー（PK2）。`>= 1`、パーティション内で連番・欠番なし                                                                   | 一意制約違反時は `DuplicateKeyError(kind="sequence")`                               |
+| `SHARD_RECORD.idempotency_key`                      | 文字列 (`str`)                  |  必須  |  不可  | なし            | `(partition_key, idempotency_key)` で複合一意制約（UK1）                                                                      | 一意制約違反時は `DuplicateKeyError(kind="idempotency_key")`                        |
+| `SHARD_RECORD.record_type`                          | 文字列 (`str`)                  |  必須  |  不可  | なし            | 非空文字列。`"__"` 始まりはシステム予約（`__snapshot__` 等）                                                                  | -                                                                                   |
+| `SHARD_RECORD.schema_version`                       | 整数 (`int`)                    |  必須  |  不可  | なし            | `>= 1`。書き込み時点の `schema_registry[record_type]`                                                                         | 保存後は書き換えず、読み取り時に Upcast する                                        |
+| `SHARD_RECORD.payload_hash`                         | 文字列 (`str`)                  |  必須  |  不可  | なし            | 64文字の16進文字列（SHA-256）。長さプレフィックス付き `(record_type, schema_version, raw_payload)` から算出                   | 保存時の元データのハッシュ。Upcast 後も決して再計算・上書きしない                   |
+| `SHARD_RECORD.raw_payload`                          | バイト列 (`bytes`) または文字列 |  必須  |  不可  | なし            | `PayloadCodec.encode` の出力。最大 **64 KB（65,536 bytes）**                                                                  | スナップショット（`__snapshot__`）にも同じ 64 KB 上限を適用                         |
+| `SHARD_RECORD.created_at`                           | 浮動小数点 (`float`)            |  必須  |  不可  | なし            | 書き込みトランザクション開始時の UTC エポック秒                                                                               | -                                                                                   |
+| `SHARD_RECORD.covers_through_seq`                   | 整数 (`int`)                    |  任意  |   可   | `NULL` (`None`) | `record_type == "__snapshot__"` のときのみ非 NULL 必須（`1 <= covers_through_seq <= 当該時点の最終seq`）。通常レコードは NULL | v2 の Retention 削除境界算出の基準値となる                                          |
+| `DEAD_LETTER.consumer_id`                           | 文字列 (`str`)                  |  必須  |  不可  | なし            | 複合主キー（PK1）。失敗した Projection の識別子                                                                               | -                                                                                   |
+| `DEAD_LETTER.partition_key` / `seq`                 | 文字列 / 整数                   |  必須  |  不可  | なし            | 複合主キー（PK2, PK3）。隔離されたレコードの識別子                                                                            | 同一 Poison Pill の再隔離に対して冪等（上書きまたは維持）                           |
+| `DEAD_LETTER.idempotency_key`〜`covers_through_seq` | （`SHARD_RECORD` と同一）       |  必須  | 条件付 | なし            | 原因となった `RecordEnvelope` の全属性を保持する                                                                              | -                                                                                   |
+| `DEAD_LETTER.error_type` / `error_message`          | 文字列 (`str`)                  |  必須  |  不可  | なし            | 最終失敗時の例外型名とエラーメッセージ                                                                                        | -                                                                                   |
+| `DEAD_LETTER.attempts`                              | 整数 (`int`)                    |  必須  |  不可  | なし            | 実行された試行回数（`>= 1`）                                                                                                  | -                                                                                   |
+| `DEAD_LETTER.failed_at`                             | 浮動小数点 (`float`)            |  必須  |  不可  | なし            | DLQ 格納時の UTC エポック秒                                                                                                   | -                                                                                   |
 
 ### 2.3 論理スキーマの不変条件と違反時の扱い
 
 DAO および基盤コアが常に維持しなければならないデータ不変条件と、違反検出時の扱いを下表に定める（Issue #2・#3・#4・#14）。
 
-| 不変条件ID | 対象エンティティ | 不変条件の内容 | 違反検出箇所と違反時の扱い | 対応Contract Test / DD |
-| :--- | :--- | :--- | :--- | :--- |
-| INV-DS-001 | `SHARD_RECORD` | **連番の一意性と厳密単調増加**: 同一 `partition_key` 内で `seq` は `1, 2, 3, ...` と1ずつ増加し、重複・欠番・逆転が存在してはならない | トランザクション失敗時は `PARTITION_SEQUENCE` ごとロールバックして欠番を防ぐ。万一 `(partition_key, seq)` 重複が起きた場合は DAO が `DuplicateKeyError(kind="sequence")` を送出する | `TR-IF-001`, `TR-IF-003`, `TR-IF-005` |
-| INV-DS-002 | `SHARD_RECORD` | **冪等キーの一意性とペイロード整合**: 同一 `partition_key` 内で `idempotency_key` は一意であり、同一キーに対する `payload_hash` は不変でなければならない | 既存レコードと `payload_hash` が一致すれば新規挿入せず `status="duplicate"` を返す。不一致なら `IdempotencyConflict` を送出し既存データを保護する。DB制約違反時は DAO が `DuplicateKeyError(kind="idempotency_key")` に変換する | `TR-IF-004`, `TR-IF-005`, `TR-IF-006`, `DBF-DD-001` |
-| INV-DS-003 | `SHARD_RECORD` | **ペイロードサイズ上限と予約種別保護**: `raw_payload` は 64 KB（65,536 bytes）以下であること。通常 `append` で `"__"` 始まりの `record_type` を保存してはならず、`__snapshot__` は `1 <= covers_through_seq <= 最新seq` を満たすこと | シャード書き込み前に `core/ingestion.py` が検査し、64 KB 超過は `PayloadTooLarge`、予約種別違反は `ReservedRecordTypeError`、`covers_through_seq` 不正は `ValueError` で拒否する（`seq` は一切進まない） | `DBF-DD-001` |
-| INV-DS-004 | `PARTITION_LEDGER` / `SHARD_RECORD` | **孤児データの禁止とバインド不変性**: `PARTITION_LEDGER` に未登録の `partition_key` のレコードが `SHARD_RECORD` に存在してはならない。また一度バインドされた `shard_id` は v1 では変更できない | 必ず `bind_shard` を先に COMMIT してから `write_transaction` を実行する（空パーティションは許容）。既登録パーティションへの `bind_shard` は上書きせず既存 `PartitionInfo` を返す | `TR-IF-007`, `TR-IF-008`, `DBF-DD-001` |
-| INV-DS-005 | `PARTITION_LEDGER` | **読み取り専用状態の保護と CAS 遷移**: `status == "read_only"` のパーティションには新規レコードもスナップショットも追加してはならない | パーティションロック下で状態を確認し、`read_only` なら `PartitionReadOnlyError` で拒否する。状態変更時の `expected_status` 不一致は `PartitionStateConflictError` で拒否する | `TR-IF-012`, `DBF-DD-001`, `DBF-DD-004` |
-| INV-DS-006 | `CONSUMER_CURSOR` | **カーソルの単調非減少**: 任意の `(consumer_id, partition_key)` について、`last_seq` は後退（減少）してはならず、`apply_batch` 成功前に進めてはならない | `MetaDAOPort.advance_cursor` は `MAX(current_seq, seq)` で更新する。`apply_batch` が例外を送出した場合は `advance_cursor` を呼ばない | `TR-IF-009`, `TR-IF-010`, `DBF-DD-002` |
-| INV-DS-007 | `SHARD_RECORD` | **保存済みレコードとハッシュの不変性**: 一度永続化されたレコードの `raw_payload`、`schema_version`、`payload_hash` は後から書き換えてはならない | スキーマ移行は読み取り時のメモリ上 Upcast で行い、DB 上の行は更新しない。変換不能または未来の未知版は `SchemaVersionError` で拒否する | `TR-IF-013`, `DBF-DD-003` |
+| 不変条件ID | 対象エンティティ                    | 不変条件の内容                                                                                                                                                                                                                       | 違反検出箇所と違反時の扱い                                                                                                                                                                                                      | 対応Contract Test / DD                              |
+| :--------- | :---------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :-------------------------------------------------- |
+| INV-DS-001 | `SHARD_RECORD`                      | **連番の一意性と厳密単調増加**: 同一 `partition_key` 内で `seq` は `1, 2, 3, ...` と1ずつ増加し、重複・欠番・逆転が存在してはならない                                                                                                | トランザクション失敗時は `PARTITION_SEQUENCE` ごとロールバックして欠番を防ぐ。万一 `(partition_key, seq)` 重複が起きた場合は DAO が `DuplicateKeyError(kind="sequence")` を送出する                                             | `TR-IF-001`, `TR-IF-003`, `TR-IF-005`               |
+| INV-DS-002 | `SHARD_RECORD`                      | **冪等キーの一意性とペイロード整合**: 同一 `partition_key` 内で `idempotency_key` は一意であり、同一キーに対する `payload_hash` は不変でなければならない                                                                             | 既存レコードと `payload_hash` が一致すれば新規挿入せず `status="duplicate"` を返す。不一致なら `IdempotencyConflict` を送出し既存データを保護する。DB制約違反時は DAO が `DuplicateKeyError(kind="idempotency_key")` に変換する | `TR-IF-004`, `TR-IF-005`, `TR-IF-006`, `DBF-DD-001` |
+| INV-DS-003 | `SHARD_RECORD`                      | **ペイロードサイズ上限と予約種別保護**: `raw_payload` は 64 KB（65,536 bytes）以下であること。通常 `append` で `"__"` 始まりの `record_type` を保存してはならず、`__snapshot__` は `1 <= covers_through_seq <= 最新seq` を満たすこと | シャード書き込み前に `core/ingestion.py` が検査し、64 KB 超過は `PayloadTooLarge`、予約種別違反は `ReservedRecordTypeError`、`covers_through_seq` 不正は `ValueError` で拒否する（`seq` は一切進まない）                        | `DBF-DD-001`                                        |
+| INV-DS-004 | `PARTITION_LEDGER` / `SHARD_RECORD` | **孤児データの禁止とバインド不変性**: `PARTITION_LEDGER` に未登録の `partition_key` のレコードが `SHARD_RECORD` に存在してはならない。また一度バインドされた `shard_id` は v1 では変更できない                                       | 必ず `bind_shard` を先に COMMIT してから `write_transaction` を実行する（空パーティションは許容）。既登録パーティションへの `bind_shard` は上書きせず既存 `PartitionInfo` を返す                                                | `TR-IF-007`, `TR-IF-008`, `DBF-DD-001`              |
+| INV-DS-005 | `PARTITION_LEDGER`                  | **読み取り専用状態の保護と CAS 遷移**: `status == "read_only"` のパーティションには新規レコードもスナップショットも追加してはならない                                                                                                | パーティションロック下で状態を確認し、`read_only` なら `PartitionReadOnlyError` で拒否する。状態変更時の `expected_status` 不一致は `PartitionStateConflictError` で拒否する                                                    | `TR-IF-012`, `DBF-DD-001`, `DBF-DD-004`             |
+| INV-DS-006 | `CONSUMER_CURSOR`                   | **カーソルの単調非減少**: 任意の `(consumer_id, partition_key)` について、`last_seq` は後退（減少）してはならず、`apply_batch` 成功前に進めてはならない                                                                              | `MetaDAOPort.advance_cursor` は `MAX(current_seq, seq)` で更新する。`apply_batch` が例外を送出した場合は `advance_cursor` を呼ばない                                                                                            | `TR-IF-009`, `TR-IF-010`, `DBF-DD-002`              |
+| INV-DS-007 | `SHARD_RECORD`                      | **保存済みレコードとハッシュの不変性**: 一度永続化されたレコードの `raw_payload`、`schema_version`、`payload_hash` は後から書き換えてはならない                                                                                      | スキーマ移行は読み取り時のメモリ上 Upcast で行い、DB 上の行は更新しない。変換不能または未来の未知版は `SchemaVersionError` で拒否する                                                                                           | `TR-IF-013`, `DBF-DD-003`                           |
 
 ### 2.4 参照実装（`contrib/sqlite/`）の物理スキーマ構成（参考）
 
 同梱の SQLite 参照実装（`contrib/sqlite/meta_dao.py` および `shard_dao.py`）が使用する物理テーブル構成を下表に示す。**本表は参照実装の仕様であり、親プロジェクトが独自のテーブル構造や別 DB エンジン（PostgreSQL 等）を採用することを一切妨げない**（Issue #1 A4、Issue #14）。
 
-| DBファイル区分 | 物理テーブル名 | カラム構成（SQLite 型） | 主キー・一意制約・インデックス |
-| :--- | :--- | :--- | :--- |
-| メタDB (`meta.db`) | `partitions` | `partition_key TEXT NOT NULL`, `shard_id TEXT NOT NULL`, `status TEXT NOT NULL DEFAULT 'active'`, `created_at REAL NOT NULL` | `PRIMARY KEY (partition_key)`, `CHECK (status IN ('active', 'read_only'))` |
-| メタDB (`meta.db`) | `cursors` | `consumer_id TEXT NOT NULL`, `partition_key TEXT NOT NULL`, `last_seq INTEGER NOT NULL`, `updated_at REAL NOT NULL` | `PRIMARY KEY (consumer_id, partition_key)` |
-| メタDB (`meta.db`) | `dead_letters` | `consumer_id TEXT NOT NULL`, `partition_key TEXT NOT NULL`, `seq INTEGER NOT NULL`, `idempotency_key TEXT NOT NULL`, `record_type TEXT NOT NULL`, `schema_version INTEGER NOT NULL`, `payload_hash TEXT NOT NULL`, `payload BLOB NOT NULL`, `created_at REAL NOT NULL`, `covers_through_seq INTEGER`, `error_type TEXT NOT NULL`, `error_message TEXT NOT NULL`, `attempts INTEGER NOT NULL`, `failed_at REAL NOT NULL` | `PRIMARY KEY (consumer_id, partition_key, seq)` |
-| シャードDB (`shard_*.db`) | `sequences` | `partition_key TEXT NOT NULL`, `last_seq INTEGER NOT NULL DEFAULT 0` | `PRIMARY KEY (partition_key)` |
-| シャードDB (`shard_*.db`) | `records` | `partition_key TEXT NOT NULL`, `seq INTEGER NOT NULL`, `idempotency_key TEXT NOT NULL`, `record_type TEXT NOT NULL`, `schema_version INTEGER NOT NULL`, `payload_hash TEXT NOT NULL`, `payload BLOB NOT NULL`, `created_at REAL NOT NULL`, `covers_through_seq INTEGER` | `PRIMARY KEY (partition_key, seq)`, `UNIQUE (partition_key, idempotency_key)` |
+| DBファイル区分            | 物理テーブル名 | カラム構成（SQLite 型）                                                                                                                                                                                                                                                                                                                                                                                                 | 主キー・一意制約・インデックス                                                |
+| :------------------------ | :------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------- |
+| メタDB (`meta.db`)        | `partitions`   | `partition_key TEXT NOT NULL`, `shard_id TEXT NOT NULL`, `status TEXT NOT NULL DEFAULT 'active'`, `created_at REAL NOT NULL`                                                                                                                                                                                                                                                                                            | `PRIMARY KEY (partition_key)`, `CHECK (status IN ('active', 'read_only'))`    |
+| メタDB (`meta.db`)        | `cursors`      | `consumer_id TEXT NOT NULL`, `partition_key TEXT NOT NULL`, `last_seq INTEGER NOT NULL`, `updated_at REAL NOT NULL`                                                                                                                                                                                                                                                                                                     | `PRIMARY KEY (consumer_id, partition_key)`                                    |
+| メタDB (`meta.db`)        | `dead_letters` | `consumer_id TEXT NOT NULL`, `partition_key TEXT NOT NULL`, `seq INTEGER NOT NULL`, `idempotency_key TEXT NOT NULL`, `record_type TEXT NOT NULL`, `schema_version INTEGER NOT NULL`, `payload_hash TEXT NOT NULL`, `payload BLOB NOT NULL`, `created_at REAL NOT NULL`, `covers_through_seq INTEGER`, `error_type TEXT NOT NULL`, `error_message TEXT NOT NULL`, `attempts INTEGER NOT NULL`, `failed_at REAL NOT NULL` | `PRIMARY KEY (consumer_id, partition_key, seq)`                               |
+| シャードDB (`shard_*.db`) | `sequences`    | `partition_key TEXT NOT NULL`, `last_seq INTEGER NOT NULL DEFAULT 0`                                                                                                                                                                                                                                                                                                                                                    | `PRIMARY KEY (partition_key)`                                                 |
+| シャードDB (`shard_*.db`) | `records`      | `partition_key TEXT NOT NULL`, `seq INTEGER NOT NULL`, `idempotency_key TEXT NOT NULL`, `record_type TEXT NOT NULL`, `schema_version INTEGER NOT NULL`, `payload_hash TEXT NOT NULL`, `payload BLOB NOT NULL`, `created_at REAL NOT NULL`, `covers_through_seq INTEGER`                                                                                                                                                 | `PRIMARY KEY (partition_key, seq)`, `UNIQUE (partition_key, idempotency_key)` |
 
 ---
 
@@ -199,11 +199,11 @@ DAO および基盤コアが常に維持しなければならないデータ不�
 
 DAO は自身の永続化保証レベルを `DurabilityLevel` として宣言し、`ShardDAOPort.write_transaction` の正常終了（COMMIT）時点でその水準を満たさなければならない（Issue #2 B1、[`ADR-004`](../adr/ADR-004_耐久性レベルの自己申告方式とシャードバインド先行の原子性契約.md)）。
 
-| `durability` 水準 | 保証される耐久性 | 参照実装 / テスト実装での設定 | 用途と制約 |
-| :--- | :--- | :--- | :--- |
-| `"power_loss"`（既定） | プロセス強制終了に加え、OSクラッシュや電源断が発生しても、`write_transaction` を抜けて `WriteAck` を返したレコードおよびメタデータは失われない | `contrib/sqlite/` の既定値（`PRAGMA journal_mode=WAL;` + `PRAGMA synchronous=FULL;`） | 本番環境の既定水準。毎回の COMMIT でディスク同期（`fsync`）が完了する |
-| `"process_crash"` | アプリケーションプロセスの突然死（SIGKILL 等）には耐えるが、OSパニックや電源断では直近の COMMIT が失われる可能性がある | 親プロジェクトが性能優先で明示的にオプトアウトした場合（例: SQLite `WAL` + `synchronous=NORMAL`） | 親プロジェクトがリスクを受容して明示宣言した場合のみ使用可 |
-| `"none"` | メモリ上のみの保持であり、プロセス終了・再接続で全データが消失する | `testing/memory_ports.py`（In-Memory 実装） | 単体テスト専用。起動時ログ・telemetry に記録し、本番での誤用を判別可能にする |
+| `durability` 水準      | 保証される耐久性                                                                                                                               | 参照実装 / テスト実装での設定                                                                     | 用途と制約                                                                   |
+| :--------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------ | :--------------------------------------------------------------------------- |
+| `"power_loss"`（既定） | プロセス強制終了に加え、OSクラッシュや電源断が発生しても、`write_transaction` を抜けて `WriteAck` を返したレコードおよびメタデータは失われない | `contrib/sqlite/` の既定値（`PRAGMA journal_mode=WAL;` + `PRAGMA synchronous=FULL;`）             | 本番環境の既定水準。毎回の COMMIT でディスク同期（`fsync`）が完了する        |
+| `"process_crash"`      | アプリケーションプロセスの突然死（SIGKILL 等）には耐えるが、OSパニックや電源断では直近の COMMIT が失われる可能性がある                         | 親プロジェクトが性能優先で明示的にオプトアウトした場合（例: SQLite `WAL` + `synchronous=NORMAL`） | 親プロジェクトがリスクを受容して明示宣言した場合のみ使用可                   |
+| `"none"`               | メモリ上のみの保持であり、プロセス終了・再接続で全データが消失する                                                                             | `testing/memory_ports.py`（In-Memory 実装）                                                       | 単体テスト専用。起動時ログ・telemetry に記録し、本番での誤用を判別可能にする |
 
 ### 3.2 原子的書き込みとトランザクション境界契約
 
@@ -246,8 +246,8 @@ DAO は自身の永続化保証レベルを `DurabilityLevel` として宣言し
 
 保存済みレコードのペイロード構造がバージョンアップした際、ストレージ上の既存レコードを一括更新（バッチ書き換え）することは行わず、読み取り時に `PayloadUpcaster` で1版ずつ変換する（Issue #4 D3、[`ADR-005`](../adr/ADR-005_v1スコープの限定と将来拡張に向けた前方互換契約の先行定義.md)）。
 
-| 移行元バージョン | 移行先バージョン | 実行契機 | 変換内容・保持する旧フィールド | ロールバック可否・方法 | 失敗時の扱い |
-| :--- | :--- | :--- | :--- | :--- | :--- |
+| 移行元バージョン             | 移行先バージョン                                                                              | 実行契機                                                                            | 変換内容・保持する旧フィールド                                                                                                                                                              | ロールバック可否・方法                                                           | 失敗時の扱い                                                                              |
+| :--------------------------- | :-------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------- |
 | `schema_version = k`（旧版） | `schema_version = k + 1`（最終的に `schema_registry[record_type]` の最新版 `N` まで連鎖実行） | `sync()`、`ProjectionRunner` の `fetch_range()`、スナップショット復元時の読み取り時 | `PayloadUpcaster.upcast(record_type, k, raw_bytes)` を `k` から `N-1` まで1版ずつ適用し、最後に1回だけ `PayloadCodec.decode` を呼ぶ。**DB上の元レコードと `payload_hash` は一切変更しない** | 可（DB上の保存データは書き換えていないため、元データは常に無傷で保持されている） | 未知の版（`> N`）や変換経路の欠落は推測せず即座に `SchemaVersionError` を送出して停止する |
 
 - **旧バージョン互換と不変則**:
@@ -294,6 +294,7 @@ DAO は自身の永続化保証レベルを `DurabilityLevel` として宣言し
 
 ## 6. 改訂履歴 (Change Log)
 
-| 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                                           |
-| :------ | :--------- | :----- | :--------------------------------------------------------------------------------- |
-| Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #14 に基づき永続化論理スキーマ、不変条件、耐久性・原子性、バックアップ対象を制定） |
+| 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                                                                 |
+| :------ | :--------- | :----- | :------------------------------------------------------------------------------------------------------- |
+| Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #14 に基づき永続化論理スキーマ、不変条件、耐久性・原子性、バックアップ対象を制定）       |
+| Rev.1.1 | 2026-11-20 | xzyozi | v1.0.0 リリース準備に伴い、状態を `draft` から `approved` へ変更（実装・レビューを経て現在の正本とする） |

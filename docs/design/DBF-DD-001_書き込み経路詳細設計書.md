@@ -4,10 +4,10 @@ document_type: "detailed_design"
 document_number: "DBF-DD-001"
 document_role: "normative"
 ssot_scope: "module_behavior"
-status: "draft"
-version: "1.0"
+status: "approved"
+version: "1.1"
 created_at: "2026-11-19"
-updated_at: "2026-11-19"
+updated_at: "2026-11-20"
 author: "xzyozi"
 owner: "xzyozi"
 purpose: "core/kernel.py、core/ingestion.py、core/ordering.py における書き込み経路（予約種別・状態・サイズ検査、payload_hash算出、bind_shard先行、冪等性確認、連番採番、Write-Before-ACK、手動スナップショット）の内部DTO、制御フロー、状態遷移、および機能テスト要件を定義するため"
@@ -51,14 +51,14 @@ related_documents:
 
 ### 2.1 対象機能一覧
 
-| 機能ID | 関数・機能名 | 呼び出し元 | 主な呼び出し先 | 同期 / 非同期 | 冪等性 | 外部副作用 | 公開範囲 |
-| :--- | :--- | :--- | :--- | :---: | :---: | :--- | :---: |
-| F-101 | `StorageKernel.append` / `WritePipeline.execute_append` | 親プロジェクト業務モジュール | `F-104`, `ShardLockManager`, `F-105`, `ShardDAOPort.write_transaction`, `F-106`, `EventDispatcher`, `ProjectionRunner` | 同期 | あり（同一冪等キー・同一ハッシュ時） | `MetaDAOPort.bind_shard`, `ShardTxPort.insert_record`, 配信キュー投入 | 外部公開（`IF-001`） |
-| F-102 | `StorageKernel.write_snapshot` / `WritePipeline.execute_snapshot` | 親プロジェクト業務モジュール | `F-104`, `ShardLockManager`, `F-105`, `ShardDAOPort.write_transaction`, `F-106`, `ProjectionRunner` | 同期 | あり（同一冪等キー・同一ハッシュ時） | `ShardTxPort.insert_record`, スナップショット対応 Projection への通知 | 外部公開（`IF-002`） |
-| F-103 | `StorageKernel.set_partition_status` | 親プロジェクト運用・管理機能 | `ShardLockManager` (`DBF-DD-004` `F-401`), `MetaDAOPort.set_partition_status` | 同期 | 条件付き（`expected_status=None` 時） | `MetaDAOPort` の状態更新、ルーティングキャッシュ更新 | 外部公開（`IF-006`） |
-| F-104 | `WritePipeline.prepare_and_hash` | `F-101`, `F-102` | `PayloadCodec.encode`, `hashlib.sha256` | 同期 | あり（純粋関数） | なし（メモリ上の検証とハッシュ算出のみ） | 内部 |
-| F-105 | `WritePipeline.resolve_and_bind_partition` | `F-101`, `F-102` | `MetaDAOPort.get_partition`, `PartitionRouterPort.select_shard`, `MetaDAOPort.bind_shard` | 同期 | あり（`bind_shard` は冪等・不変） | 未登録パーティションの `MetaDAOPort` 登録とキャッシュ格納 | 内部 |
-| F-106 | `SequenceCoordinator.allocate_and_verify` | `F-101`, `F-102` | `ShardTxPort.next_sequence` | 同期 | なし（呼び出しごとに `+1` 採番） | トランザクション内での `PARTITION_SEQUENCE` 更新 | 内部 |
+| 機能ID | 関数・機能名                                                      | 呼び出し元                   | 主な呼び出し先                                                                                                         | 同期 / 非同期 |                冪等性                 | 外部副作用                                                            |       公開範囲       |
+| :----- | :---------------------------------------------------------------- | :--------------------------- | :--------------------------------------------------------------------------------------------------------------------- | :-----------: | :-----------------------------------: | :-------------------------------------------------------------------- | :------------------: |
+| F-101  | `StorageKernel.append` / `WritePipeline.execute_append`           | 親プロジェクト業務モジュール | `F-104`, `ShardLockManager`, `F-105`, `ShardDAOPort.write_transaction`, `F-106`, `EventDispatcher`, `ProjectionRunner` |     同期      | あり（同一冪等キー・同一ハッシュ時）  | `MetaDAOPort.bind_shard`, `ShardTxPort.insert_record`, 配信キュー投入 | 外部公開（`IF-001`） |
+| F-102  | `StorageKernel.write_snapshot` / `WritePipeline.execute_snapshot` | 親プロジェクト業務モジュール | `F-104`, `ShardLockManager`, `F-105`, `ShardDAOPort.write_transaction`, `F-106`, `ProjectionRunner`                    |     同期      | あり（同一冪等キー・同一ハッシュ時）  | `ShardTxPort.insert_record`, スナップショット対応 Projection への通知 | 外部公開（`IF-002`） |
+| F-103  | `StorageKernel.set_partition_status`                              | 親プロジェクト運用・管理機能 | `ShardLockManager` (`DBF-DD-004` `F-401`), `MetaDAOPort.set_partition_status`                                          |     同期      | 条件付き（`expected_status=None` 時） | `MetaDAOPort` の状態更新、ルーティングキャッシュ更新                  | 外部公開（`IF-006`） |
+| F-104  | `WritePipeline.prepare_and_hash`                                  | `F-101`, `F-102`             | `PayloadCodec.encode`, `hashlib.sha256`                                                                                |     同期      |           あり（純粋関数）            | なし（メモリ上の検証とハッシュ算出のみ）                              |         内部         |
+| F-105  | `WritePipeline.resolve_and_bind_partition`                        | `F-101`, `F-102`             | `MetaDAOPort.get_partition`, `PartitionRouterPort.select_shard`, `MetaDAOPort.bind_shard`                              |     同期      |   あり（`bind_shard` は冪等・不変）   | 未登録パーティションの `MetaDAOPort` 登録とキャッシュ格納             |         内部         |
+| F-106  | `SequenceCoordinator.allocate_and_verify`                         | `F-101`, `F-102`             | `ShardTxPort.next_sequence`                                                                                            |     同期      |   なし（呼び出しごとに `+1` 採番）    | トランザクション内での `PARTITION_SEQUENCE` 更新                      |         内部         |
 
 ### 2.2 主要関数・機能の契約
 
@@ -131,29 +131,29 @@ related_documents:
 
 - **対象機能ID**: `F-104`, `F-105`, `F-106`（内部 DTO `PreparedWriteRequest[T]`）
 
-| パラメータ名 / フィールド | データ型 | 必須性 | NULL可 | デフォルト値 | バリデーションルール・入力制約 | 例・備考 |
-| :--- | :--- | :---: | :---: | :--- | :--- | :--- |
-| `partition_key` | `str` | 必須 | 不可 | なし | 非空 UTF-8 文字列 | `"order:usdjpy"` |
-| `record_type` | `str` | 必須 | 不可 | なし | `is_snapshot=False` 時は `"__"` 非開始、`is_snapshot=True` 時は `"__snapshot__"` | `"tick_signal"` / `"__snapshot__"` |
-| `schema_version` | `int` | 必須 | 不可 | なし | `schema_registry[record_type]` と一致する正の整数 | `1` |
-| `idempotency_key` | `str` | 必須 | 不可 | なし | 非空文字列 | UUID 文字列 |
-| `payload` | `T` | 必須 | 可 | なし | ドメインオブジェクト | 元のペイロード参照 |
-| `raw_payload` | `bytes` | 必須 | 不可 | なし | `len(raw_payload) <= max_payload_bytes`（65,536 bytes） | `PayloadCodec.encode(payload)` の結果 |
-| `payload_hash` | `str` | 必須 | 不可 | なし | 64文字の16進文字列（SHA-256） | 長さプレフィックス連結ハッシュ |
-| `covers_through_seq` | `int \| None` | 任意 | 可 | `None` | スナップショット時のみ必須（`>= 1`） | `1000` |
-| `preferred_shard` | `str \| None` | 任意 | 可 | `None` | 初回バインド時のみ参照されるシャードヒント | `"shard_heavy"` |
-| `is_snapshot` | `bool` | 必須 | 不可 | `False` | スナップショット書き込み経路の識別フラグ | `False` / `True` |
+| パラメータ名 / フィールド | データ型      | 必須性 | NULL可 | デフォルト値 | バリデーションルール・入力制約                                                   | 例・備考                              |
+| :------------------------ | :------------ | :----: | :----: | :----------- | :------------------------------------------------------------------------------- | :------------------------------------ |
+| `partition_key`           | `str`         |  必須  |  不可  | なし         | 非空 UTF-8 文字列                                                                | `"order:usdjpy"`                      |
+| `record_type`             | `str`         |  必須  |  不可  | なし         | `is_snapshot=False` 時は `"__"` 非開始、`is_snapshot=True` 時は `"__snapshot__"` | `"tick_signal"` / `"__snapshot__"`    |
+| `schema_version`          | `int`         |  必須  |  不可  | なし         | `schema_registry[record_type]` と一致する正の整数                                | `1`                                   |
+| `idempotency_key`         | `str`         |  必須  |  不可  | なし         | 非空文字列                                                                       | UUID 文字列                           |
+| `payload`                 | `T`           |  必須  |   可   | なし         | ドメインオブジェクト                                                             | 元のペイロード参照                    |
+| `raw_payload`             | `bytes`       |  必須  |  不可  | なし         | `len(raw_payload) <= max_payload_bytes`（65,536 bytes）                          | `PayloadCodec.encode(payload)` の結果 |
+| `payload_hash`            | `str`         |  必須  |  不可  | なし         | 64文字の16進文字列（SHA-256）                                                    | 長さプレフィックス連結ハッシュ        |
+| `covers_through_seq`      | `int \| None` |  任意  |   可   | `None`       | スナップショット時のみ必須（`>= 1`）                                             | `1000`                                |
+| `preferred_shard`         | `str \| None` |  任意  |   可   | `None`       | 初回バインド時のみ参照されるシャードヒント                                       | `"shard_heavy"`                       |
+| `is_snapshot`             | `bool`        |  必須  |  不可  | `False`      | スナップショット書き込み経路の識別フラグ                                         | `False` / `True`                      |
 
 ### 2.4 出力 DTO スキーマ・戻り値仕様
 
 - **対象機能ID**: `F-101`, `F-102`
 - **正常時の戻り値 DTO**: `WriteAck[T]`（外部公開契約は [`DBF-IF-001`](./DBF-IF-001_IF仕様書.md) 2.3節を参照）。内部パイプライン完了時は以下の `WritePipelineResult[T]` を生成し、Facade が `WriteAck[T]` を取り出して返す。
 
-| フィールド | データ型 | 必須性 | NULL可 | 正常時の意味・制約 |
-| :--- | :--- | :---: | :---: | :--- |
-| `ack` | `WriteAck[T]` | 必須 | 不可 | `status`（`"committed"` または `"duplicate"`）、`shard_id`、`envelope` |
-| `should_dispatch_event` | `bool` | 必須 | 不可 | `status == "committed"` のときのみ `True`（`"duplicate"` 時は再配信しない） |
-| `is_snapshot` | `bool` | 必須 | 不可 | `True` の場合は通常 `subscribe` への配信をスキップし、`include_snapshots=True` の Projection のみへ通知する |
+| フィールド              | データ型      | 必須性 | NULL可 | 正常時の意味・制約                                                                                          |
+| :---------------------- | :------------ | :----: | :----: | :---------------------------------------------------------------------------------------------------------- |
+| `ack`                   | `WriteAck[T]` |  必須  |  不可  | `status`（`"committed"` または `"duplicate"`）、`shard_id`、`envelope`                                      |
+| `should_dispatch_event` | `bool`        |  必須  |  不可  | `status == "committed"` のときのみ `True`（`"duplicate"` 時は再配信しない）                                 |
+| `is_snapshot`           | `bool`        |  必須  |  不可  | `True` の場合は通常 `subscribe` への配信をスキップし、`include_snapshots=True` の Projection のみへ通知する |
 
 - **異常時の戻り値 / 例外**: `KernelClosedError`, `KernelMaintenanceError`, `ReservedRecordTypeError`, `SchemaVersionError`, `PayloadTooLarge`, `PartitionReadOnlyError`, `IdempotencyConflict`, `DuplicateKeyError`, `ValueError`。
 - **再試行可否**: `KernelMaintenanceError` および一時的な DB ロック競合時は同一 `idempotency_key` で安全に再試行可能。バリデーション系例外（`PayloadTooLarge`, `ReservedRecordTypeError`, `IdempotencyConflict` 等）は再試行不可。
@@ -263,19 +263,19 @@ sequenceDiagram
   - `PostCommitNotify`（Event Bus / Projection への配信）は、`InShardTx` の COMMIT が正常完了した `CompletedCommitted` 経路でのみ実行される（Write-Before-ACK）。
 - **未定義イベントの扱い**: 未知の例外が DAO から送出された場合は、`write_transaction` を必ず `ROLLBACK` し、パーティションロックを `finally` 節で確実に解放してから呼び出し元へ例外を再送出する。
 
-| 現在の状態 / ノード | 実行結果 / 評価フラグ | 次の状態 / ノード | 遷移判定条件・閾値ルール | 副作用・ログ / メトリクス |
-| :--- | :--- | :--- | :--- | :--- |
-| `PreValidating` | 事前検証エラー | `RejectedPreLock` | `record_type` が `"__"` 始まり（通常 `append` 時）、`schema_version` 不一致、または `len(raw_bytes) > 65536` | ロック獲得・DBアクセスなしで該当例外を送出 |
-| `PreValidating` | 事前検証OK | `AcquiringLock` | 全入力制約をクリアし `payload_hash` 算出完了 | `PreparedWriteRequest` を生成 |
-| `AcquiringLock` | ライフサイクル拒否 | `RejectedPreLock` | カーネルが `CLOSING`/`CLOSED` または `MAINTENANCE` 状態 | `KernelClosedError` または `KernelMaintenanceError` を送出 |
-| `AcquiringLock` | ロック獲得成功 | `ResolvingPartition` | 対象 `partition_key` の排他ロックとアクティブ Writer カウンタを獲得 | - |
-| `ResolvingPartition` | 読み取り専用拒否 | `RejectedInLock` | `PartitionInfo.status == "read_only"` | パーティションロックを解放し `PartitionReadOnlyError` を送出 |
-| `ResolvingPartition` | バインド＆状態OK | `InShardTx` | `bind_shard` が確定済みかつ `status == "active"` | ルーティングキャッシュを更新し `write_transaction(shard_id)` を開始 |
-| `InShardTx` | 冪等再送ヒット | `DuplicateHit` | `find_by_idempotency` が非 `None` かつ `existing.payload_hash == incoming.payload_hash` | トランザクションを閉じロック解放。`WriteAck(status="duplicate")` を返却（再配信なし） |
-| `InShardTx` | 冪等キー衝突 | `RolledBackConflict` | `find_by_idempotency` が非 `None` かつ `existing.payload_hash != incoming.payload_hash` | トランザクションを ROLLBACK しロック解放。`IdempotencyConflict` を送出 |
-| `InShardTx` | 新規挿入＆COMMIT成功 | `Committed` | `find_by_idempotency` が `None`、`next_sequence` 採番、`insert_record` 成功、COMMIT 完了 | シャードDBへレコードと最新 `seq` が永続化確定 |
-| `InShardTx` | 制約違反 / DB例外 | `RolledBackError` | `covers_through_seq` 不正（`write_snapshot` 時）、または `insert_record` で `DuplicateKeyError` 等が発生 | トランザクションを ROLLBACK（採番も巻き戻し）しロック解放。例外を送出 |
-| `Committed` | 非同期通知完了 | `CompletedCommitted` | 通常レコードは `EventDispatcher` と `ProjectionRunner`、スナップショットは `include_snapshots=True` の `ProjectionRunner` のみへ通知 | `WriteAck(status="committed")` を返却し telemetry を記録 |
+| 現在の状態 / ノード  | 実行結果 / 評価フラグ | 次の状態 / ノード    | 遷移判定条件・閾値ルール                                                                                                             | 副作用・ログ / メトリクス                                                             |
+| :------------------- | :-------------------- | :------------------- | :----------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------ |
+| `PreValidating`      | 事前検証エラー        | `RejectedPreLock`    | `record_type` が `"__"` 始まり（通常 `append` 時）、`schema_version` 不一致、または `len(raw_bytes) > 65536`                         | ロック獲得・DBアクセスなしで該当例外を送出                                            |
+| `PreValidating`      | 事前検証OK            | `AcquiringLock`      | 全入力制約をクリアし `payload_hash` 算出完了                                                                                         | `PreparedWriteRequest` を生成                                                         |
+| `AcquiringLock`      | ライフサイクル拒否    | `RejectedPreLock`    | カーネルが `CLOSING`/`CLOSED` または `MAINTENANCE` 状態                                                                              | `KernelClosedError` または `KernelMaintenanceError` を送出                            |
+| `AcquiringLock`      | ロック獲得成功        | `ResolvingPartition` | 対象 `partition_key` の排他ロックとアクティブ Writer カウンタを獲得                                                                  | -                                                                                     |
+| `ResolvingPartition` | 読み取り専用拒否      | `RejectedInLock`     | `PartitionInfo.status == "read_only"`                                                                                                | パーティションロックを解放し `PartitionReadOnlyError` を送出                          |
+| `ResolvingPartition` | バインド＆状態OK      | `InShardTx`          | `bind_shard` が確定済みかつ `status == "active"`                                                                                     | ルーティングキャッシュを更新し `write_transaction(shard_id)` を開始                   |
+| `InShardTx`          | 冪等再送ヒット        | `DuplicateHit`       | `find_by_idempotency` が非 `None` かつ `existing.payload_hash == incoming.payload_hash`                                              | トランザクションを閉じロック解放。`WriteAck(status="duplicate")` を返却（再配信なし） |
+| `InShardTx`          | 冪等キー衝突          | `RolledBackConflict` | `find_by_idempotency` が非 `None` かつ `existing.payload_hash != incoming.payload_hash`                                              | トランザクションを ROLLBACK しロック解放。`IdempotencyConflict` を送出                |
+| `InShardTx`          | 新規挿入＆COMMIT成功  | `Committed`          | `find_by_idempotency` が `None`、`next_sequence` 採番、`insert_record` 成功、COMMIT 完了                                             | シャードDBへレコードと最新 `seq` が永続化確定                                         |
+| `InShardTx`          | 制約違反 / DB例外     | `RolledBackError`    | `covers_through_seq` 不正（`write_snapshot` 時）、または `insert_record` で `DuplicateKeyError` 等が発生                             | トランザクションを ROLLBACK（採番も巻き戻し）しロック解放。例外を送出                 |
+| `Committed`          | 非同期通知完了        | `CompletedCommitted` | 通常レコードは `EventDispatcher` と `ProjectionRunner`、スナップショットは `include_snapshots=True` の `ProjectionRunner` のみへ通知 | `WriteAck(status="committed")` を返却し telemetry を記録                              |
 
 ---
 
@@ -283,17 +283,17 @@ sequenceDiagram
 
 ### 4.1 エラー分類と対処方針
 
-| エラーコード / 例外型 | エラーカテゴリ | 発生・判定基準 | 再試行上限 | 再試行安全条件 | 終端ステータス | 利用者・運用者対応 | 副作用・データ保持契約 |
-| :--- | :--- | :--- | :---: | :--- | :--- | :--- | :--- |
-| `ReservedRecordTypeError` | 入力契約違反 | `append` に `"__"` で始まる `record_type` を指定 | 0回（不可） | なし | 事前拒否 (`RejectedPreLock`) | `write_snapshot` を使用するか `record_type` を変更する | DB・シーケンス・キャッシュへの副作用なし |
-| `SchemaVersionError` | スキーマ契約違反 | `record_type` が `schema_registry` に未登録、または `schema_version` が最新版と不一致 | 0回（不可） | なし | 事前拒否 (`RejectedPreLock`) | `KernelConfig.schema_registry` または呼び出し元の版番号を修正する | DB・シーケンス・キャッシュへの副作用なし |
-| `PayloadTooLarge` | サイズ上限違反 | `len(codec.encode(payload)) > max_payload_bytes`（64 KB） | 0回（不可） | なし | 事前拒否 (`RejectedPreLock`) | ペイロードを 64 KB 以下に縮小または分割する | DB・シーケンス・キャッシュへの副作用なし |
-| `KernelClosedError` | ライフサイクル違反 | `close()` 開始後に `append` / `write_snapshot` / `set_partition_status` を呼び出し | 0回（不可） | なし | 事前拒否 (`RejectedPreLock`) | シャットダウン中として新規要求を打ち切る | 進行中だった他のトランザクションには影響しない |
-| `KernelMaintenanceError` | メンテナンス遮断 | `enter_maintenance`〜`exit_maintenance` の間に書き込みや状態変更を呼び出し | 呼び出し側制御 | `exit_maintenance` 完了後に同じ `idempotency_key` で再実行 | 事前拒否 (`RejectedPreLock`) | メンテナンス解除を待ってから再送する | メンテナンス整合点を汚染しない |
-| `PartitionReadOnlyError` | パーティション状態違反 | 対象パーティションの `status == "read_only"` | 条件付き | `set_partition_status` で `"active"` に戻された場合のみ | ロック内拒否 (`RejectedInLock`) | 読み取り専用パーティションとして書き込みを中止する | 初回未登録だった場合は空パーティションが登録されるがレコードは挿入されない |
-| `IdempotencyConflict` | 冪等キー衝突 | 同一 `(partition_key, idempotency_key)` の既存レコードと `payload_hash` が不一致 | 0回（不可） | なし（同じキーでの再試行は常に同じエラーになる） | ロールバック (`RolledBackConflict`) | 異なるペイロードに同じ冪等キーを使い回しているバグを修正する | 既存レコードは一切変更されず、`seq` も進まない |
-| `DuplicateKeyError` | ストレージ一意制約違反 | DAO の `insert_record` で `(partition_key, seq)` または `(partition_key, idempotency_key)` が重複 | 0回（内部保護） | パーティションロック下で直列化されているため通常発生しない。発生時はロールバック後そのまま送出 | ロールバック (`RolledBackError`) | 別プロセスからの不正直接書き込みや DAO 実装バグを調査する | トランザクション全体が ROLLBACK され、採番増分も巻き戻る |
-| `ValueError`（スナップショット境界不正） | 入力契約違反 | `write_snapshot` の `covers_through_seq < 1` または現在の最終 `seq` を超過 | 0回（不可） | なし | ロールバック (`RolledBackError`) | 確定済みの `seq` 以下の値を `covers_through_seq` に指定する | トランザクションが ROLLBACK され、スナップショットは保存されない |
+| エラーコード / 例外型                    | エラーカテゴリ         | 発生・判定基準                                                                                    |   再試行上限    | 再試行安全条件                                                                                 | 終端ステータス                      | 利用者・運用者対応                                                | 副作用・データ保持契約                                                     |
+| :--------------------------------------- | :--------------------- | :------------------------------------------------------------------------------------------------ | :-------------: | :--------------------------------------------------------------------------------------------- | :---------------------------------- | :---------------------------------------------------------------- | :------------------------------------------------------------------------- |
+| `ReservedRecordTypeError`                | 入力契約違反           | `append` に `"__"` で始まる `record_type` を指定                                                  |   0回（不可）   | なし                                                                                           | 事前拒否 (`RejectedPreLock`)        | `write_snapshot` を使用するか `record_type` を変更する            | DB・シーケンス・キャッシュへの副作用なし                                   |
+| `SchemaVersionError`                     | スキーマ契約違反       | `record_type` が `schema_registry` に未登録、または `schema_version` が最新版と不一致             |   0回（不可）   | なし                                                                                           | 事前拒否 (`RejectedPreLock`)        | `KernelConfig.schema_registry` または呼び出し元の版番号を修正する | DB・シーケンス・キャッシュへの副作用なし                                   |
+| `PayloadTooLarge`                        | サイズ上限違反         | `len(codec.encode(payload)) > max_payload_bytes`（64 KB）                                         |   0回（不可）   | なし                                                                                           | 事前拒否 (`RejectedPreLock`)        | ペイロードを 64 KB 以下に縮小または分割する                       | DB・シーケンス・キャッシュへの副作用なし                                   |
+| `KernelClosedError`                      | ライフサイクル違反     | `close()` 開始後に `append` / `write_snapshot` / `set_partition_status` を呼び出し                |   0回（不可）   | なし                                                                                           | 事前拒否 (`RejectedPreLock`)        | シャットダウン中として新規要求を打ち切る                          | 進行中だった他のトランザクションには影響しない                             |
+| `KernelMaintenanceError`                 | メンテナンス遮断       | `enter_maintenance`〜`exit_maintenance` の間に書き込みや状態変更を呼び出し                        | 呼び出し側制御  | `exit_maintenance` 完了後に同じ `idempotency_key` で再実行                                     | 事前拒否 (`RejectedPreLock`)        | メンテナンス解除を待ってから再送する                              | メンテナンス整合点を汚染しない                                             |
+| `PartitionReadOnlyError`                 | パーティション状態違反 | 対象パーティションの `status == "read_only"`                                                      |    条件付き     | `set_partition_status` で `"active"` に戻された場合のみ                                        | ロック内拒否 (`RejectedInLock`)     | 読み取り専用パーティションとして書き込みを中止する                | 初回未登録だった場合は空パーティションが登録されるがレコードは挿入されない |
+| `IdempotencyConflict`                    | 冪等キー衝突           | 同一 `(partition_key, idempotency_key)` の既存レコードと `payload_hash` が不一致                  |   0回（不可）   | なし（同じキーでの再試行は常に同じエラーになる）                                               | ロールバック (`RolledBackConflict`) | 異なるペイロードに同じ冪等キーを使い回しているバグを修正する      | 既存レコードは一切変更されず、`seq` も進まない                             |
+| `DuplicateKeyError`                      | ストレージ一意制約違反 | DAO の `insert_record` で `(partition_key, seq)` または `(partition_key, idempotency_key)` が重複 | 0回（内部保護） | パーティションロック下で直列化されているため通常発生しない。発生時はロールバック後そのまま送出 | ロールバック (`RolledBackError`)    | 別プロセスからの不正直接書き込みや DAO 実装バグを調査する         | トランザクション全体が ROLLBACK され、採番増分も巻き戻る                   |
+| `ValueError`（スナップショット境界不正） | 入力契約違反           | `write_snapshot` の `covers_through_seq < 1` または現在の最終 `seq` を超過                        |   0回（不可）   | なし                                                                                           | ロールバック (`RolledBackError`)    | 確定済みの `seq` 以下の値を `covers_through_seq` に指定する       | トランザクションが ROLLBACK され、スナップショットは保存されない           |
 
 ---
 
@@ -303,16 +303,16 @@ sequenceDiagram
 
 ### 5.1 機能テスト要件一覧
 
-| 要件ID | 対象機能ID | 保証すべき振る舞い・条件 | 検証観点 | 対応テストケース |
-| :--- | :--- | :--- | :--- | :--- |
-| TR-DD1-001 | F-101 / F-104 | **冪等キー衝突の検知**: 同じ `(partition_key, idempotency_key)` で内容（または `record_type` / `schema_version`）が異なる書き込みを行ったとき、`IdempotencyConflict` を送出し、既存レコードも `seq` も変わらないこと（Issue #2） | 異常 / 冪等性 | `tests/unit/test_ingestion.py::test_idempotency_conflict_on_hash_mismatch` |
-| TR-DD1-002 | F-101 / F-104 | **64 KB ペイロード上限の強制**: エンコード後 64 KB（65,536 bytes）を超えるペイロードを `append` または `write_snapshot` に渡したとき、`PayloadTooLarge` が送出され、`seq` が一切進まないこと（Issue #3） | 境界 / 異常 | `tests/unit/test_ingestion.py::test_payload_too_large_rejected_without_advancing_seq` |
-| TR-DD1-003 | F-101 / F-104 | **システム予約 `record_type` の拒否**: `"__"` で始まる `record_type`（例: `"__snapshot__"`, `"__internal__"`）を通常の `append` に渡したとき、`ReservedRecordTypeError` になること（Issue #4） | 異常 / 境界 | `tests/unit/test_ingestion.py::test_reserved_record_type_rejected_in_append` |
-| TR-DD1-004 | F-101 / F-104 | **最新 `schema_version` 一致の強制**: `KernelConfig.schema_registry` に登録された最新版と異なる `schema_version`（または未登録 `record_type`）での書き込みが `SchemaVersionError` で拒否されること（Issue #4） | 異常 / 版管理 | `tests/unit/test_ingestion.py::test_write_with_non_latest_schema_version_rejected` |
-| TR-DD1-005 | F-101 / F-103 / F-105 | **`read_only` パーティションでの書き込み拒否と読み取り継続**: `status="read_only"` のパーティションへの `append` / `write_snapshot` が `PartitionReadOnlyError` になり、既存の読み取り・`sync`・Projection 追いつきは正常に動作すること（Issue #3） | 正常 / 異常 / 状態 | `tests/unit/test_ingestion.py::test_read_only_partition_rejects_writes_allows_reads` |
-| TR-DD1-006 | F-102 / F-106 | **手動スナップショットの `covers_through_seq` 境界検証**: `write_snapshot` の `covers_through_seq` がその時点の最終 `seq` を超える（または `0` 以下の）場合に拒否され、正常な範囲のときは `record_type="__snapshot__"` として保存されること（Issue #4） | 正常 / 境界 / 異常 | `tests/unit/test_ingestion.py::test_write_snapshot_covers_through_seq_validation` |
-| TR-DD1-007 | F-101 / F-105 | **`bind_shard` 先行と Write-Before-ACK の順序保証**: 初回書き込み時に必ず `MetaDAOPort.bind_shard` が `ShardDAOPort.write_transaction` より先に呼ばれ、シャードの COMMIT が成功した後にのみ Event Bus への通知が行われること（COMMIT 失敗時は通知されないこと）（Issue #2） | 正常 / 異常 / 原子性 | `tests/unit/test_ingestion.py::test_bind_shard_precedes_write_and_write_before_ack` |
-| TR-DD1-008 | F-101 / F-104 | **冪等再送時の重複配信抑止**: 同一 `(partition_key, idempotency_key, payload_hash)` で再送したとき、`WriteAck(status="duplicate")` で元の `seq` のレコードが返り、Event Bus への二重配信が行われないこと（Issue #2） | 正常 / 冪等性 | `tests/unit/test_ingestion.py::test_duplicate_write_returns_existing_without_redispatch` |
+| 要件ID     | 対象機能ID            | 保証すべき振る舞い・条件                                                                                                                                                                                                                                                    | 検証観点             | 対応テストケース                                                                         |
+| :--------- | :-------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------- | :--------------------------------------------------------------------------------------- |
+| TR-DD1-001 | F-101 / F-104         | **冪等キー衝突の検知**: 同じ `(partition_key, idempotency_key)` で内容（または `record_type` / `schema_version`）が異なる書き込みを行ったとき、`IdempotencyConflict` を送出し、既存レコードも `seq` も変わらないこと（Issue #2）                                            | 異常 / 冪等性        | `tests/unit/test_ingestion.py::test_idempotency_conflict_on_hash_mismatch`               |
+| TR-DD1-002 | F-101 / F-104         | **64 KB ペイロード上限の強制**: エンコード後 64 KB（65,536 bytes）を超えるペイロードを `append` または `write_snapshot` に渡したとき、`PayloadTooLarge` が送出され、`seq` が一切進まないこと（Issue #3）                                                                    | 境界 / 異常          | `tests/unit/test_ingestion.py::test_payload_too_large_rejected_without_advancing_seq`    |
+| TR-DD1-003 | F-101 / F-104         | **システム予約 `record_type` の拒否**: `"__"` で始まる `record_type`（例: `"__snapshot__"`, `"__internal__"`）を通常の `append` に渡したとき、`ReservedRecordTypeError` になること（Issue #4）                                                                              | 異常 / 境界          | `tests/unit/test_ingestion.py::test_reserved_record_type_rejected_in_append`             |
+| TR-DD1-004 | F-101 / F-104         | **最新 `schema_version` 一致の強制**: `KernelConfig.schema_registry` に登録された最新版と異なる `schema_version`（または未登録 `record_type`）での書き込みが `SchemaVersionError` で拒否されること（Issue #4）                                                              | 異常 / 版管理        | `tests/unit/test_ingestion.py::test_write_with_non_latest_schema_version_rejected`       |
+| TR-DD1-005 | F-101 / F-103 / F-105 | **`read_only` パーティションでの書き込み拒否と読み取り継続**: `status="read_only"` のパーティションへの `append` / `write_snapshot` が `PartitionReadOnlyError` になり、既存の読み取り・`sync`・Projection 追いつきは正常に動作すること（Issue #3）                         | 正常 / 異常 / 状態   | `tests/unit/test_ingestion.py::test_read_only_partition_rejects_writes_allows_reads`     |
+| TR-DD1-006 | F-102 / F-106         | **手動スナップショットの `covers_through_seq` 境界検証**: `write_snapshot` の `covers_through_seq` がその時点の最終 `seq` を超える（または `0` 以下の）場合に拒否され、正常な範囲のときは `record_type="__snapshot__"` として保存されること（Issue #4）                     | 正常 / 境界 / 異常   | `tests/unit/test_ingestion.py::test_write_snapshot_covers_through_seq_validation`        |
+| TR-DD1-007 | F-101 / F-105         | **`bind_shard` 先行と Write-Before-ACK の順序保証**: 初回書き込み時に必ず `MetaDAOPort.bind_shard` が `ShardDAOPort.write_transaction` より先に呼ばれ、シャードの COMMIT が成功した後にのみ Event Bus への通知が行われること（COMMIT 失敗時は通知されないこと）（Issue #2） | 正常 / 異常 / 原子性 | `tests/unit/test_ingestion.py::test_bind_shard_precedes_write_and_write_before_ack`      |
+| TR-DD1-008 | F-101 / F-104         | **冪等再送時の重複配信抑止**: 同一 `(partition_key, idempotency_key, payload_hash)` で再送したとき、`WriteAck(status="duplicate")` で元の `seq` のレコードが返り、Event Bus への二重配信が行われないこと（Issue #2）                                                        | 正常 / 冪等性        | `tests/unit/test_ingestion.py::test_duplicate_write_returns_existing_without_redispatch` |
 
 ### 5.2 適用する品質ゲート
 
@@ -340,6 +340,7 @@ sequenceDiagram
 
 ## 7. 改訂履歴 (Change Log)
 
-| 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                              |
-| :------ | :--------- | :----- | :-------------------------------------------------------------------- |
-| Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #15 に基づき書き込み経路 core/kernel, ingestion, ordering の詳細設計を制定） |
+| 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                                                                 |
+| :------ | :--------- | :----- | :------------------------------------------------------------------------------------------------------- |
+| Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #15 に基づき書き込み経路 core/kernel, ingestion, ordering の詳細設計を制定）             |
+| Rev.1.1 | 2026-11-20 | xzyozi | v1.0.0 リリース準備に伴い、状態を `draft` から `approved` へ変更（実装・レビューを経て現在の正本とする） |

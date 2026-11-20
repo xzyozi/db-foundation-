@@ -4,8 +4,8 @@ document_type: "detailed_design"
 document_number: "DBF-DD-004"
 document_role: "normative"
 ssot_scope: "module_behavior"
-status: "draft"
-version: "1.2"
+status: "approved"
+version: "1.3"
 created_at: "2026-11-19"
 updated_at: "2026-11-20"
 author: "xzyozi"
@@ -308,3 +308,4 @@ sequenceDiagram
 | Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #15 に基づき実行制御 runtime/concurrency, maintenance, lifecycle の詳細設計を制定）                                                                                                                         |
 | Rev.1.1 | 2026-11-20 | xzyozi | `resume_projection(skip_current=True)` を `partition_write_guard` 内で行う契約、メンテナンス中の `subscribe`（許可）と `register_projection`（拒否）の扱い、close 後の拒否を明記し、`TR-DD4-005`・`006` を追加（Issue #40） |
 | Rev.1.2 | 2026-11-20 | xzyozi | Issue #37 に基づき runtime から core への依存を解消し、`runtime/collaborators.py` の Protocol 経由で注入する旨を追記                                                                                                        |
+| Rev.1.3 | 2026-11-20 | xzyozi | v1.0.0 リリース準備に伴い、状態を `draft` から `approved` へ変更（実装・レビューを経て現在の正本とする）                                                                                                                    |

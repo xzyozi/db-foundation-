@@ -4,8 +4,8 @@ document_type: "detailed_design"
 document_number: "DBF-DD-002"
 document_role: "normative"
 ssot_scope: "module_behavior"
-status: "draft"
-version: "1.1"
+status: "approved"
+version: "1.2"
 created_at: "2026-11-19"
 updated_at: "2026-11-20"
 author: "xzyozi"
@@ -53,15 +53,15 @@ related_documents:
 
 ### 2.1 対象機能一覧
 
-| 機能ID | 関数・機能名 | 呼び出し元 | 主な呼び出し先 | 同期 / 非同期 | 冪等性 | 外部副作用 | 公開範囲 |
-| :--- | :--- | :--- | :--- | :---: | :---: | :--- | :---: |
-| F-201 | `StorageKernel.subscribe` / `EventDispatcher.register_subscriber` | 親プロジェクト購読モジュール | `F-204`, 購読者別ワーカースレッド起動 | 同期（配信は非同期） | なし（新規ハンドル生成） | インメモリ購読スロット作成 | 外部公開（`IF-003`） |
-| F-202 | `StorageKernel.register_projection` / `ProjectionRunner.start` | 親プロジェクト Composition Root | `F-204`, `F-206`, `ProjectionRunner` ワーカースレッド起動 | 同期（投影は非同期） | なし（同一 `consumer_id` 重複不可） | バックグラウンド投影ワーカー起動 | 外部公開（`IF-004`） |
-| F-203 | `StorageKernel.resume_projection` / `ProjectionRunner.resume_partition` | 親プロジェクト運用・管理機能 | `MetaDAOPort.get_cursor`, `MetaDAOPort.advance_cursor`, Dirty Set 登録 | 同期 | 条件付き（稼働中かつ `skip_current=False` 時） | `skip_current=True` 時はカーソルを `+1` 更新し `PAUSED` 解除 | 外部公開（`IF-005`） |
-| F-204 | `PatternMatcher.compile_and_match` | `F-201`, `F-202`, `F-205`, `F-206` | 文字列前方一致・完全一致判定 | 同期 | あり（純粋関数） | なし | 内部 |
-| F-205 | `EventDispatcher.publish` & 購読者ワーカー配信 | `WritePipeline` (`DBF-DD-001` `F-101`) | `F-204`, 購読者別有界キュー, 購読者 `callback`, `on_error` | 非同期（投入はノンブロッキング） | なし（At-Most-Once） | 購読者コールバック呼び出し、`dropped_count` 更新 | 内部 |
-| F-206 | `ProjectionRunner.notify_and_catchup_loop` | `WritePipeline` (`F-101`, `F-102`) / 起動時・定期タイマー | `MetaDAOPort.list_partitions`, `MetaDAOPort.get_cursor`, `ShardDAOPort.fetch_range`, `DBF-DD-003` (`F-302` Upcast), `F-207`, `MetaDAOPort.advance_cursor` | 非同期 | あり（`apply_batch` の冪等契約と単調カーソルによる） | `ProjectionPort.apply_batch`, `MetaDAOPort.advance_cursor` | 内部 |
-| F-207 | `DeadLetterCoordinator.apply_with_retry_and_isolate` | `F-206` | `ProjectionPort.apply_batch`, `DeadLetterPort.put_dead_letter`, `MetaDAOPort.advance_cursor` | 同期（ワーカー内） | あり | 指数バックオフ待機、Poison Pill 単件特定、DLQ 保存またはパーティション一時停止 | 内部 |
+| 機能ID | 関数・機能名                                                            | 呼び出し元                                                | 主な呼び出し先                                                                                                                                            |          同期 / 非同期           |                        冪等性                        | 外部副作用                                                                     |       公開範囲       |
+| :----- | :---------------------------------------------------------------------- | :-------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------: | :--------------------------------------------------: | :----------------------------------------------------------------------------- | :------------------: |
+| F-201  | `StorageKernel.subscribe` / `EventDispatcher.register_subscriber`       | 親プロジェクト購読モジュール                              | `F-204`, 購読者別ワーカースレッド起動                                                                                                                     |       同期（配信は非同期）       |               なし（新規ハンドル生成）               | インメモリ購読スロット作成                                                     | 外部公開（`IF-003`） |
+| F-202  | `StorageKernel.register_projection` / `ProjectionRunner.start`          | 親プロジェクト Composition Root                           | `F-204`, `F-206`, `ProjectionRunner` ワーカースレッド起動                                                                                                 |       同期（投影は非同期）       |         なし（同一 `consumer_id` 重複不可）          | バックグラウンド投影ワーカー起動                                               | 外部公開（`IF-004`） |
+| F-203  | `StorageKernel.resume_projection` / `ProjectionRunner.resume_partition` | 親プロジェクト運用・管理機能                              | `MetaDAOPort.get_cursor`, `MetaDAOPort.advance_cursor`, Dirty Set 登録                                                                                    |               同期               |    条件付き（稼働中かつ `skip_current=False` 時）    | `skip_current=True` 時はカーソルを `+1` 更新し `PAUSED` 解除                   | 外部公開（`IF-005`） |
+| F-204  | `PatternMatcher.compile_and_match`                                      | `F-201`, `F-202`, `F-205`, `F-206`                        | 文字列前方一致・完全一致判定                                                                                                                              |               同期               |                   あり（純粋関数）                   | なし                                                                           |         内部         |
+| F-205  | `EventDispatcher.publish` & 購読者ワーカー配信                          | `WritePipeline` (`DBF-DD-001` `F-101`)                    | `F-204`, 購読者別有界キュー, 購読者 `callback`, `on_error`                                                                                                | 非同期（投入はノンブロッキング） |                 なし（At-Most-Once）                 | 購読者コールバック呼び出し、`dropped_count` 更新                               |         内部         |
+| F-206  | `ProjectionRunner.notify_and_catchup_loop`                              | `WritePipeline` (`F-101`, `F-102`) / 起動時・定期タイマー | `MetaDAOPort.list_partitions`, `MetaDAOPort.get_cursor`, `ShardDAOPort.fetch_range`, `DBF-DD-003` (`F-302` Upcast), `F-207`, `MetaDAOPort.advance_cursor` |              非同期              | あり（`apply_batch` の冪等契約と単調カーソルによる） | `ProjectionPort.apply_batch`, `MetaDAOPort.advance_cursor`                     |         内部         |
+| F-207  | `DeadLetterCoordinator.apply_with_retry_and_isolate`                    | `F-206`                                                   | `ProjectionPort.apply_batch`, `DeadLetterPort.put_dead_letter`, `MetaDAOPort.advance_cursor`                                                              |        同期（ワーカー内）        |                         あり                         | 指数バックオフ待機、Poison Pill 単件特定、DLQ 保存またはパーティション一時停止 |         内部         |
 
 ### 2.2 主要関数・機能の契約
 
@@ -132,25 +132,25 @@ related_documents:
 
 - **対象機能ID**: `F-201`, `F-205`（内部 DTO `SubscriberSlot[T]`）および `F-202`, `F-206`, `F-207`（内部 DTO `ProjectionWorkerState[T]`）
 
-| DTO名 / フィールド | データ型 | 必須性 | NULL可 | デフォルト値 | バリデーションルール・入力制約 | 例・備考 |
-| :--- | :--- | :---: | :---: | :--- | :--- | :--- |
-| `SubscriberSlot.subscription_id` | `str` | 必須 | 不可 | なし | 一意な識別子 | `"sub-0001"` |
-| `SubscriberSlot.pattern` | `str` | 必須 | 不可 | なし | `F-204` で検証済みのパターン | `"order:*"` |
-| `SubscriberSlot.queue` | `deque[RecordEnvelope[T]]` | 必須 | 不可 | 空 deque | 最大要素数 `max_queue_size`（`>= 1`） | 有界リングバッファ |
-| `SubscriberSlot.drop_policy` | `DropPolicy` | 必須 | 不可 | `"drop_newest"` | `"drop_newest"` / `"drop_oldest"` / `"disconnect"` | - |
-| `SubscriberSlot.dropped_count` | `int` | 必須 | 不可 | `0` | `>= 0`（ドロップ発生ごとに単調増加） | `SubscriptionHandle.dropped_count` で公開 |
-| `SubscriberSlot.is_active` | `bool` | 必須 | 不可 | `True` | `unsubscribe()` または `disconnect` で `False` | - |
-| `ProjectionWorkerState.consumer_id` | `str` | 必須 | 不可 | なし | `projection.consumer_id`（カーネル内で一意） | `"fts_projection"` |
-| `ProjectionWorkerState.partition_patterns` | `tuple[str, ...]` | 必須 | 不可 | `("*",)` | 各要素が `F-204` 検証済み | `("chat:*",)` |
-| `ProjectionWorkerState.batch_size` | `int` | 必須 | 不可 | `100` | `>= 1` | `fetch_range` の `limit` に使用 |
-| `ProjectionWorkerState.retry_policy` | `RetryPolicy` | 必須 | 不可 | `RetryPolicy()` | `max_attempts >= 1` | - |
-| `ProjectionWorkerState.failure_policy` | `ProjectionFailurePolicy` | 必須 | 不可 | 自動解決 | `"dlq_and_skip"` または `"pause_partition"` | - |
-| `ProjectionWorkerState.include_snapshots` | `bool` | 必須 | 不可 | `False` | `True` のときのみ `__snapshot__` を `apply_batch` に渡す | - |
-| `ProjectionWorkerState.dirty_partitions` | `set[str]` | 必須 | 不可 | 空集合 | 追いつきが必要な `partition_key` の集合（ロック保護） | Dirty Set |
-| `ProjectionWorkerState.paused_partitions` | `set[str]` | 必須 | 不可 | 空集合 | `pause_partition` により一時停止中の `partition_key` 集合 | `resume_projection` で解除 |
-| `ProjectionWorkerState.catchup_interval_sec` | `float` | 必須 | 不可 | `5.0` | `0` 以下で定期追いつきを無効化 | `ProjectionRunner` のコンストラクタ引数 |
-| `ProjectionWorkerState.consecutive_failures` | `dict[str, int]` | 必須 | 不可 | 空 | 想定外の例外の連続失敗回数（`partition_key` 単位）。成功または再開でリセット | `retry_policy.max_attempts` 到達で一時停止 |
-| `ProjectionWorkerState.not_before` | `dict[str, float]` | 必須 | 不可 | 空 | 再選択を許可する `time.monotonic()` 時刻（`partition_key` 単位） | バックオフ待機の管理 |
+| DTO名 / フィールド                           | データ型                   | 必須性 | NULL可 | デフォルト値    | バリデーションルール・入力制約                                               | 例・備考                                   |
+| :------------------------------------------- | :------------------------- | :----: | :----: | :-------------- | :--------------------------------------------------------------------------- | :----------------------------------------- |
+| `SubscriberSlot.subscription_id`             | `str`                      |  必須  |  不可  | なし            | 一意な識別子                                                                 | `"sub-0001"`                               |
+| `SubscriberSlot.pattern`                     | `str`                      |  必須  |  不可  | なし            | `F-204` で検証済みのパターン                                                 | `"order:*"`                                |
+| `SubscriberSlot.queue`                       | `deque[RecordEnvelope[T]]` |  必須  |  不可  | 空 deque        | 最大要素数 `max_queue_size`（`>= 1`）                                        | 有界リングバッファ                         |
+| `SubscriberSlot.drop_policy`                 | `DropPolicy`               |  必須  |  不可  | `"drop_newest"` | `"drop_newest"` / `"drop_oldest"` / `"disconnect"`                           | -                                          |
+| `SubscriberSlot.dropped_count`               | `int`                      |  必須  |  不可  | `0`             | `>= 0`（ドロップ発生ごとに単調増加）                                         | `SubscriptionHandle.dropped_count` で公開  |
+| `SubscriberSlot.is_active`                   | `bool`                     |  必須  |  不可  | `True`          | `unsubscribe()` または `disconnect` で `False`                               | -                                          |
+| `ProjectionWorkerState.consumer_id`          | `str`                      |  必須  |  不可  | なし            | `projection.consumer_id`（カーネル内で一意）                                 | `"fts_projection"`                         |
+| `ProjectionWorkerState.partition_patterns`   | `tuple[str, ...]`          |  必須  |  不可  | `("*",)`        | 各要素が `F-204` 検証済み                                                    | `("chat:*",)`                              |
+| `ProjectionWorkerState.batch_size`           | `int`                      |  必須  |  不可  | `100`           | `>= 1`                                                                       | `fetch_range` の `limit` に使用            |
+| `ProjectionWorkerState.retry_policy`         | `RetryPolicy`              |  必須  |  不可  | `RetryPolicy()` | `max_attempts >= 1`                                                          | -                                          |
+| `ProjectionWorkerState.failure_policy`       | `ProjectionFailurePolicy`  |  必須  |  不可  | 自動解決        | `"dlq_and_skip"` または `"pause_partition"`                                  | -                                          |
+| `ProjectionWorkerState.include_snapshots`    | `bool`                     |  必須  |  不可  | `False`         | `True` のときのみ `__snapshot__` を `apply_batch` に渡す                     | -                                          |
+| `ProjectionWorkerState.dirty_partitions`     | `set[str]`                 |  必須  |  不可  | 空集合          | 追いつきが必要な `partition_key` の集合（ロック保護）                        | Dirty Set                                  |
+| `ProjectionWorkerState.paused_partitions`    | `set[str]`                 |  必須  |  不可  | 空集合          | `pause_partition` により一時停止中の `partition_key` 集合                    | `resume_projection` で解除                 |
+| `ProjectionWorkerState.catchup_interval_sec` | `float`                    |  必須  |  不可  | `5.0`           | `0` 以下で定期追いつきを無効化                                               | `ProjectionRunner` のコンストラクタ引数    |
+| `ProjectionWorkerState.consecutive_failures` | `dict[str, int]`           |  必須  |  不可  | 空              | 想定外の例外の連続失敗回数（`partition_key` 単位）。成功または再開でリセット | `retry_policy.max_attempts` 到達で一時停止 |
+| `ProjectionWorkerState.not_before`           | `dict[str, float]`         |  必須  |  不可  | 空              | 再選択を許可する `time.monotonic()` 時刻（`partition_key` 単位）             | バックオフ待機の管理                       |
 
 ### 2.4 出力 DTO スキーマ・戻り値仕様
 
@@ -261,20 +261,20 @@ sequenceDiagram
   - `paused_partitions` に含まれる `partition_key` は、`resume_projection` が呼ばれるまで `fetch_range` および `apply_batch` の実行対象から除外される（その間も他のパーティションの投影は止まらない）。
 - **未定義イベントの扱い**: `DeadLetterPort.put_dead_letter` 自体が例外を送出した場合は、データの無断消失を防ぐためカーソルを進めず、自動的に `pause_partition` と同じ状態へフォールバックしてエラーログを出力する。
 
-| 現在の状態 / ノード | 実行結果 / 評価フラグ | 次の状態 / ノード | 遷移判定条件・閾値ルール | 副作用・ログ / メトリクス |
-| :--- | :--- | :--- | :--- | :--- |
-| `Subscriber: Active` | キュー空きあり | `Subscriber: Active` | `len(queue) < max_queue_size` | イベントを末尾へ追加しワーカーへ通知 |
-| `Subscriber: Active` | キュー満杯 (`drop_newest`) | `Subscriber: Active` | `len(queue) == max_queue_size` かつ `drop_policy == "drop_newest"` | 新規イベントを破棄、`dropped_count += 1`、警告 telemetry |
-| `Subscriber: Active` | キュー満杯 (`drop_oldest`) | `Subscriber: Active` | `len(queue) == max_queue_size` かつ `drop_policy == "drop_oldest"` | `queue.popleft()` で最古を破棄し新規を追加、`dropped_count += 1` |
-| `Subscriber: Active` | キュー満杯 (`disconnect`) | `Subscriber: Disconnected` | `len(queue) == max_queue_size` かつ `drop_policy == "disconnect"` | 新規を破棄、`dropped_count += 1`、`is_active = False` に遷移 |
-| `Projection: Synced` | 書き込み通知 / 溢れ | `Projection: DirtyQueued` | パターン一致の書き込み発生（` paused_partitions` 外） | `dirty_partitions.add(partition_key)` |
-| `Projection: CatchingUp` | 未処理レコードあり | `Projection: ApplyingBatch` | `fetch_range(after_seq=last_seq)` が1件以上返却 | Upcast を適用し、`include_snapshots=False` なら `__snapshot__` をフィルタ |
-| `Projection: ApplyingBatch` | `apply_batch` 成功 | `Projection: CursorAdvancing` | 例外なしで `apply_batch` が復帰 | `advance_cursor(consumer_id, partition_key, batch_last_seq)` を実行 |
-| `Projection: ApplyingBatch` | `apply_batch` 例外（リトライ内） | `Projection: RetryingBatch` | `attempt < retry_policy.max_attempts` | カーソルを更新せず指数バックオフ待機後に再実行 |
-| `Projection: RetryingBatch` | バッチリトライ上限到達 | `Projection: IsolatingPoisonPill` | `attempt == retry_policy.max_attempts` | バッチを1件ずつ単件リトライ実行へ切り替え |
-| `Projection: IsolatingPoisonPill` | Poison Pill 特定 (`dlq_and_skip`) | `Projection: CursorAdvancing` | 単件も上限失敗 かつ `failure_policy == "dlq_and_skip"` | `put_dead_letter` に保存し当該 `seq` まで `advance_cursor`、残りの単件処理を継続 |
-| `Projection: IsolatingPoisonPill` | Poison Pill 特定 (`pause_partition`) | `Projection: Paused` | 単件も上限失敗 かつ `failure_policy == "pause_partition"` | 当該 `seq` の手前でカーソルを止め、`paused_partitions.add(partition_key)` |
-| `Projection: Paused` | `resume_projection` 呼び出し | `Projection: DirtyQueued` | `skip_current=True` なら原因レコード1件の `seq` まで `advance_cursor` | `paused_partitions.discard(partition_key)` し `dirty_partitions.add(partition_key)` |
+| 現在の状態 / ノード               | 実行結果 / 評価フラグ                | 次の状態 / ノード                 | 遷移判定条件・閾値ルール                                              | 副作用・ログ / メトリクス                                                           |
+| :-------------------------------- | :----------------------------------- | :-------------------------------- | :-------------------------------------------------------------------- | :---------------------------------------------------------------------------------- |
+| `Subscriber: Active`              | キュー空きあり                       | `Subscriber: Active`              | `len(queue) < max_queue_size`                                         | イベントを末尾へ追加しワーカーへ通知                                                |
+| `Subscriber: Active`              | キュー満杯 (`drop_newest`)           | `Subscriber: Active`              | `len(queue) == max_queue_size` かつ `drop_policy == "drop_newest"`    | 新規イベントを破棄、`dropped_count += 1`、警告 telemetry                            |
+| `Subscriber: Active`              | キュー満杯 (`drop_oldest`)           | `Subscriber: Active`              | `len(queue) == max_queue_size` かつ `drop_policy == "drop_oldest"`    | `queue.popleft()` で最古を破棄し新規を追加、`dropped_count += 1`                    |
+| `Subscriber: Active`              | キュー満杯 (`disconnect`)            | `Subscriber: Disconnected`        | `len(queue) == max_queue_size` かつ `drop_policy == "disconnect"`     | 新規を破棄、`dropped_count += 1`、`is_active = False` に遷移                        |
+| `Projection: Synced`              | 書き込み通知 / 溢れ                  | `Projection: DirtyQueued`         | パターン一致の書き込み発生（` paused_partitions` 外）                 | `dirty_partitions.add(partition_key)`                                               |
+| `Projection: CatchingUp`          | 未処理レコードあり                   | `Projection: ApplyingBatch`       | `fetch_range(after_seq=last_seq)` が1件以上返却                       | Upcast を適用し、`include_snapshots=False` なら `__snapshot__` をフィルタ           |
+| `Projection: ApplyingBatch`       | `apply_batch` 成功                   | `Projection: CursorAdvancing`     | 例外なしで `apply_batch` が復帰                                       | `advance_cursor(consumer_id, partition_key, batch_last_seq)` を実行                 |
+| `Projection: ApplyingBatch`       | `apply_batch` 例外（リトライ内）     | `Projection: RetryingBatch`       | `attempt < retry_policy.max_attempts`                                 | カーソルを更新せず指数バックオフ待機後に再実行                                      |
+| `Projection: RetryingBatch`       | バッチリトライ上限到達               | `Projection: IsolatingPoisonPill` | `attempt == retry_policy.max_attempts`                                | バッチを1件ずつ単件リトライ実行へ切り替え                                           |
+| `Projection: IsolatingPoisonPill` | Poison Pill 特定 (`dlq_and_skip`)    | `Projection: CursorAdvancing`     | 単件も上限失敗 かつ `failure_policy == "dlq_and_skip"`                | `put_dead_letter` に保存し当該 `seq` まで `advance_cursor`、残りの単件処理を継続    |
+| `Projection: IsolatingPoisonPill` | Poison Pill 特定 (`pause_partition`) | `Projection: Paused`              | 単件も上限失敗 かつ `failure_policy == "pause_partition"`             | 当該 `seq` の手前でカーソルを止め、`paused_partitions.add(partition_key)`           |
+| `Projection: Paused`              | `resume_projection` 呼び出し         | `Projection: DirtyQueued`         | `skip_current=True` なら原因レコード1件の `seq` まで `advance_cursor` | `paused_partitions.discard(partition_key)` し `dirty_partitions.add(partition_key)` |
 
 ---
 
@@ -282,14 +282,14 @@ sequenceDiagram
 
 ### 4.1 エラー分類と対処方針
 
-| エラーコード / 例外型 | エラーカテゴリ | 発生・判定基準 | 再試行上限 | 再試行安全条件 | 終端ステータス | 利用者・運用者対応 | 副作用・データ保持契約 |
-| :--- | :--- | :--- | :---: | :--- | :--- | :--- | :--- |
-| 購読者 `callback` 内の任意例外 | 購読者処理エラー | `subscribe` のコールバック実行中に例外送出 | 0回（At-Most-Once） | なし（再試行しない） | 継続（`Active` 維持） | `on_error` ハンドラまたはログで例外原因を修正する | 他の購読者・Projection は一切止まらず、次のイベント処理へ進む |
-| `ProjectionPort.apply_batch` の一時的エラー | 投影一時障害 | DBロック競合等で `apply_batch` が失敗 | `RetryPolicy.max_attempts`（既定3回） | `apply_batch` が `(partition_key, seq)` で冪等であること | 自動回復（`CursorAdvancing`） | 自動回復するため対応不要 | 失敗中は `advance_cursor` が呼ばれず、再試行で全件適用される |
-| `ProjectionPort.apply_batch` の恒久的エラー（Poison Pill） | 投影データ不整合 / バグ | バッチ再試行上限超過後、単件再実行でも `max_attempts` 回失敗 | バッチ N回 ＋ 単件 N回 | 単件ごとに直前の正常レコードまではカーソル確定済み | `dlq_and_skip`: DLQ隔離して継続 / `pause_partition`: `Paused` | `list_dead_letters` で原因を確認するか、修正後に `resume_projection(skip_current=...)` を呼ぶ | 同じバッチ内の正常レコードは確実に適用され、Poison Pill 1件のみが隔離または停止対象となる |
-| `SchemaVersionError`（投影読み取り時） | スキーマ移行エラー | `fetch_range` 後の Upcast で未知の版または変換経路欠落 | 0回（リトライ不可の恒久エラー） | `PayloadUpcaster` を修正して再起動または `resume_projection` | `Paused`（`failure_policy` に関わらず DLQ スキップせず当該パーティションを一時停止） | `PayloadUpcaster` または `schema_registry` を修正する | カーソルを進めず停止するため、Upcaster 修正後に欠落なく投影を再開できる |
-| 想定外の例外（DAO 障害等） | 基盤・外部依存障害 | `apply_batch` 以外の処理（`get_partition` / `get_cursor` / `fetch_range` など）で例外送出 | 連続 `RetryPolicy.max_attempts` 回（バックオフ付き） | 失敗中は `advance_cursor` が呼ばれない | 上限未満: 自動回復 / 上限到達: `Paused`（`projection.partition_paused` を発行） | 依存先（DB 等）を復旧し `resume_projection` を呼ぶ | 失敗したパーティションだけが待機し、他のパーティションの投影と `notify` は止まらない（ビジーループにならない） |
-| `ValueError`（登録・再開引数不正） | 入力契約違反 | 不正な購読パターン、重複/未登録 `consumer_id`、DLQ なしでの `dlq_and_skip` 指定 | 0回（不可） | なし | 呼び出し拒否 | 引数または DI 構成を修正する | 既存の購読者・Projection 状態は変更されない |
+| エラーコード / 例外型                                      | エラーカテゴリ          | 発生・判定基準                                                                            |                      再試行上限                      | 再試行安全条件                                               | 終端ステータス                                                                       | 利用者・運用者対応                                                                            | 副作用・データ保持契約                                                                                         |
+| :--------------------------------------------------------- | :---------------------- | :---------------------------------------------------------------------------------------- | :--------------------------------------------------: | :----------------------------------------------------------- | :----------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------- |
+| 購読者 `callback` 内の任意例外                             | 購読者処理エラー        | `subscribe` のコールバック実行中に例外送出                                                |                 0回（At-Most-Once）                  | なし（再試行しない）                                         | 継続（`Active` 維持）                                                                | `on_error` ハンドラまたはログで例外原因を修正する                                             | 他の購読者・Projection は一切止まらず、次のイベント処理へ進む                                                  |
+| `ProjectionPort.apply_batch` の一時的エラー                | 投影一時障害            | DBロック競合等で `apply_batch` が失敗                                                     |        `RetryPolicy.max_attempts`（既定3回）         | `apply_batch` が `(partition_key, seq)` で冪等であること     | 自動回復（`CursorAdvancing`）                                                        | 自動回復するため対応不要                                                                      | 失敗中は `advance_cursor` が呼ばれず、再試行で全件適用される                                                   |
+| `ProjectionPort.apply_batch` の恒久的エラー（Poison Pill） | 投影データ不整合 / バグ | バッチ再試行上限超過後、単件再実行でも `max_attempts` 回失敗                              |                バッチ N回 ＋ 単件 N回                | 単件ごとに直前の正常レコードまではカーソル確定済み           | `dlq_and_skip`: DLQ隔離して継続 / `pause_partition`: `Paused`                        | `list_dead_letters` で原因を確認するか、修正後に `resume_projection(skip_current=...)` を呼ぶ | 同じバッチ内の正常レコードは確実に適用され、Poison Pill 1件のみが隔離または停止対象となる                      |
+| `SchemaVersionError`（投影読み取り時）                     | スキーマ移行エラー      | `fetch_range` 後の Upcast で未知の版または変換経路欠落                                    |           0回（リトライ不可の恒久エラー）            | `PayloadUpcaster` を修正して再起動または `resume_projection` | `Paused`（`failure_policy` に関わらず DLQ スキップせず当該パーティションを一時停止） | `PayloadUpcaster` または `schema_registry` を修正する                                         | カーソルを進めず停止するため、Upcaster 修正後に欠落なく投影を再開できる                                        |
+| 想定外の例外（DAO 障害等）                                 | 基盤・外部依存障害      | `apply_batch` 以外の処理（`get_partition` / `get_cursor` / `fetch_range` など）で例外送出 | 連続 `RetryPolicy.max_attempts` 回（バックオフ付き） | 失敗中は `advance_cursor` が呼ばれない                       | 上限未満: 自動回復 / 上限到達: `Paused`（`projection.partition_paused` を発行）      | 依存先（DB 等）を復旧し `resume_projection` を呼ぶ                                            | 失敗したパーティションだけが待機し、他のパーティションの投影と `notify` は止まらない（ビジーループにならない） |
+| `ValueError`（登録・再開引数不正）                         | 入力契約違反            | 不正な購読パターン、重複/未登録 `consumer_id`、DLQ なしでの `dlq_and_skip` 指定           |                     0回（不可）                      | なし                                                         | 呼び出し拒否                                                                         | 引数または DI 構成を修正する                                                                  | 既存の購読者・Projection 状態は変更されない                                                                    |
 
 `SchemaVersionError` を `dlq_and_skip` でも一時停止とする理由: 変換経路の欠落は個別レコードの不具合（Poison Pill）ではなく、同じ `record_type` のレコード全体に及ぶ。DLQ へ隔離してカーソルを進めると欠落が全レコードへ広がるため、原因を直してから `resume_projection` で再開する運用を仕様とする（`TR-DD2-010`）。
 
@@ -301,18 +301,18 @@ sequenceDiagram
 
 ### 5.1 機能テスト要件一覧
 
-| 要件ID | 対象機能ID | 保証すべき振る舞い・条件 | 検証観点 | 対応テストケース |
-| :--- | :--- | :--- | :--- | :--- |
-| TR-DD2-001 | F-202 / F-206 | **Event Bus 取りこぼし・キュー溢れからの自動追いつき**: インメモリ通知のドロップやキュー溢れが発生しても、Dirty Set と `fetch_range` 経由で `ProjectionRunner` が自動的に全レコードへ追いつくこと（Issue #2） | 正常 / 異常回復 / 信頼性 | `tests/unit/test_projection.py::test_projection_catches_up_via_dirty_set_on_queue_overflow` |
-| TR-DD2-002 | F-206 / F-207 | **`apply_batch` 例外時のカーソル保護と再試行**: `apply_batch` が例外を送出したとき `advance_cursor` が決して呼ばれず、`RetryPolicy` に基づく再試行で再処理されてからカーソルが進むこと（Issue #2） | 異常 / 再試行 / 冪等性 | `tests/unit/test_projection.py::test_cursor_not_advanced_on_apply_batch_failure_and_retried` |
-| TR-DD2-003 | F-201 / F-205 | **Slow Consumer の隔離と `drop_policy` カウント**: `subscribe` の特定の購読者が遅延または例外を送出しても、他の購読者および Projection が止まらないこと。また `drop_policy`（`drop_newest` / `drop_oldest` / `disconnect`）ごとのドロップ件数が `SubscriptionHandle.dropped_count` に正確に出ること（Issue #3） | 正常 / 並行性 / 背圧制御 | `tests/unit/test_event_bus.py::test_slow_subscriber_isolation_and_drop_policies` |
-| TR-DD2-004 | F-203 / F-207 | **Poison Pill の単件隔離と一時停止からの再開**: バッチ内に1件の Poison Pill があるとき、`dlq_and_skip` ではその1件だけが `DeadLetterPort` に隔離されて同じバッチの正常なレコードはすべて適用されること。また `pause_partition` で停止したパーティションが `resume_projection(skip_current=False/True)` で再開できること（Issue #3） | 異常 / 隔離 / 運用回復 | `tests/unit/test_projection.py::test_poison_pill_single_record_isolation_and_resume` |
-| TR-DD2-005 | F-201 / F-202 / F-205 / F-206 | **`__snapshot__` の配信フィルタリング**: `record_type="__snapshot__"` のレコードが通常の `subscribe` と既定（`include_snapshots=False`）の Projection には届かず、`include_snapshots=True` を指定した Projection にだけ届くこと（Issue #4） | 正常 / フィルタ | `tests/unit/test_projection.py::test_snapshot_filtering_for_subscribers_and_projections` |
-| TR-DD2-006 | F-204 | **購読パターン3種の照合と不正パターンの拒否**: 完全一致、`*`、末尾ワイルドカード（`chat:*`）が正しく照合され、途中の `*` などの不正パターンが `ValueError` で拒否されること（Issue #3） | 正常 / 境界 / 異常 | `tests/unit/test_event_bus.py::test_subscription_pattern_matching_and_validation` |
-| TR-DD2-007 | F-202 / F-206 | **定期ポーリングによる追いつき**: 通知（`notify`）を経由せずに書き込まれたレコードが、`catchup_interval_sec` ごとの Dirty Set 再投入で Projection に届くこと。`catchup_interval_sec <= 0` では再投入されないこと（Issue #39） | 正常 / 信頼性 | `tests/unit/test_projection.py::TestPeriodicCatchup` |
-| TR-DD2-008 | F-206 | **親 DAO 呼び出し中のロック非保持**: `list_partitions` が遅くても、`stop(drain=True)` と `enter_maintenance(drain=True)` の実行中に別スレッドの `notify` / `register` がブロックされないこと（Issue #39） | 並行性 | `tests/unit/test_projection.py::TestDaoCallsOutsideLock` |
-| TR-DD2-009 | F-206 / F-207 | **想定外の例外のバックオフと一時停止**: 常に例外を出す DAO でもビジーループにならず（呼び出し回数が `max_attempts` に収まる）、他のパーティションの投影が止まらず、上限到達で一時停止してテレメトリが出て、原因解消後に `resume` で再開できること。成功で連続失敗カウンタがリセットされること（Issue #39） | 異常 / 信頼性 | `tests/unit/test_projection.py::TestUnexpectedFailureBackoff` |
-| TR-DD2-010 | F-206 / F-207 | **`SchemaVersionError` は `failure_policy` に関わらず一時停止**: `dlq_and_skip` でも DLQ に隔離せず、カーソルを進めずに当該パーティションが一時停止すること（Issue #39） | 異常 / データ保護 | `tests/unit/test_projection.py::TestSchemaVersionErrorPausesPartition` |
+| 要件ID     | 対象機能ID                    | 保証すべき振る舞い・条件                                                                                                                                                                                                                                                                                                            | 検証観点                 | 対応テストケース                                                                             |
+| :--------- | :---------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------- | :------------------------------------------------------------------------------------------- |
+| TR-DD2-001 | F-202 / F-206                 | **Event Bus 取りこぼし・キュー溢れからの自動追いつき**: インメモリ通知のドロップやキュー溢れが発生しても、Dirty Set と `fetch_range` 経由で `ProjectionRunner` が自動的に全レコードへ追いつくこと（Issue #2）                                                                                                                       | 正常 / 異常回復 / 信頼性 | `tests/unit/test_projection.py::test_projection_catches_up_via_dirty_set_on_queue_overflow`  |
+| TR-DD2-002 | F-206 / F-207                 | **`apply_batch` 例外時のカーソル保護と再試行**: `apply_batch` が例外を送出したとき `advance_cursor` が決して呼ばれず、`RetryPolicy` に基づく再試行で再処理されてからカーソルが進むこと（Issue #2）                                                                                                                                  | 異常 / 再試行 / 冪等性   | `tests/unit/test_projection.py::test_cursor_not_advanced_on_apply_batch_failure_and_retried` |
+| TR-DD2-003 | F-201 / F-205                 | **Slow Consumer の隔離と `drop_policy` カウント**: `subscribe` の特定の購読者が遅延または例外を送出しても、他の購読者および Projection が止まらないこと。また `drop_policy`（`drop_newest` / `drop_oldest` / `disconnect`）ごとのドロップ件数が `SubscriptionHandle.dropped_count` に正確に出ること（Issue #3）                     | 正常 / 並行性 / 背圧制御 | `tests/unit/test_event_bus.py::test_slow_subscriber_isolation_and_drop_policies`             |
+| TR-DD2-004 | F-203 / F-207                 | **Poison Pill の単件隔離と一時停止からの再開**: バッチ内に1件の Poison Pill があるとき、`dlq_and_skip` ではその1件だけが `DeadLetterPort` に隔離されて同じバッチの正常なレコードはすべて適用されること。また `pause_partition` で停止したパーティションが `resume_projection(skip_current=False/True)` で再開できること（Issue #3） | 異常 / 隔離 / 運用回復   | `tests/unit/test_projection.py::test_poison_pill_single_record_isolation_and_resume`         |
+| TR-DD2-005 | F-201 / F-202 / F-205 / F-206 | **`__snapshot__` の配信フィルタリング**: `record_type="__snapshot__"` のレコードが通常の `subscribe` と既定（`include_snapshots=False`）の Projection には届かず、`include_snapshots=True` を指定した Projection にだけ届くこと（Issue #4）                                                                                         | 正常 / フィルタ          | `tests/unit/test_projection.py::test_snapshot_filtering_for_subscribers_and_projections`     |
+| TR-DD2-006 | F-204                         | **購読パターン3種の照合と不正パターンの拒否**: 完全一致、`*`、末尾ワイルドカード（`chat:*`）が正しく照合され、途中の `*` などの不正パターンが `ValueError` で拒否されること（Issue #3）                                                                                                                                             | 正常 / 境界 / 異常       | `tests/unit/test_event_bus.py::test_subscription_pattern_matching_and_validation`            |
+| TR-DD2-007 | F-202 / F-206                 | **定期ポーリングによる追いつき**: 通知（`notify`）を経由せずに書き込まれたレコードが、`catchup_interval_sec` ごとの Dirty Set 再投入で Projection に届くこと。`catchup_interval_sec <= 0` では再投入されないこと（Issue #39）                                                                                                       | 正常 / 信頼性            | `tests/unit/test_projection.py::TestPeriodicCatchup`                                         |
+| TR-DD2-008 | F-206                         | **親 DAO 呼び出し中のロック非保持**: `list_partitions` が遅くても、`stop(drain=True)` と `enter_maintenance(drain=True)` の実行中に別スレッドの `notify` / `register` がブロックされないこと（Issue #39）                                                                                                                           | 並行性                   | `tests/unit/test_projection.py::TestDaoCallsOutsideLock`                                     |
+| TR-DD2-009 | F-206 / F-207                 | **想定外の例外のバックオフと一時停止**: 常に例外を出す DAO でもビジーループにならず（呼び出し回数が `max_attempts` に収まる）、他のパーティションの投影が止まらず、上限到達で一時停止してテレメトリが出て、原因解消後に `resume` で再開できること。成功で連続失敗カウンタがリセットされること（Issue #39）                          | 異常 / 信頼性            | `tests/unit/test_projection.py::TestUnexpectedFailureBackoff`                                |
+| TR-DD2-010 | F-206 / F-207                 | **`SchemaVersionError` は `failure_policy` に関わらず一時停止**: `dlq_and_skip` でも DLQ に隔離せず、カーソルを進めずに当該パーティションが一時停止すること（Issue #39）                                                                                                                                                            | 異常 / データ保護        | `tests/unit/test_projection.py::TestSchemaVersionErrorPausesPartition`                       |
 
 ### 5.2 適用する品質ゲート
 
@@ -340,7 +340,8 @@ sequenceDiagram
 
 ## 7. 改訂履歴 (Change Log)
 
-| 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                              |
-| :------ | :--------- | :----- | :-------------------------------------------------------------------- |
-| Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #15 に基づき配信とProjection core/event_bus, projection, reliability の詳細設計を制定） |
+| 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                                                                                                                                                            |
+| :------ | :--------- | :----- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #15 に基づき配信とProjection core/event_bus, projection, reliability の詳細設計を制定）                                                                                             |
 | Rev.1.1 | 2026-11-20 | xzyozi | 定期ポーリング追いつき（`catchup_interval_sec`）、ロック外での DAO 呼び出し、想定外例外のバックオフと一時停止、`SchemaVersionError` の一時停止理由を明記し、`TR-DD2-007`〜`010` を追加（Issue #39） |
+| Rev.1.2 | 2026-11-20 | xzyozi | v1.0.0 リリース準備に伴い、状態を `draft` から `approved` へ変更（実装・レビューを経て現在の正本とする）                                                                                            |
