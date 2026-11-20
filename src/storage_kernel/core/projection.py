@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from contextlib import nullcontext
 import logging
 import threading
 import time
@@ -16,12 +17,16 @@ from ..contracts.envelope import (
 from ..contracts.errors import SchemaVersionError
 from ..contracts.telemetry import TelemetryEvent, TelemetrySink
 from ..ports.dao import DeadLetterPort, MetaDAOPort, ProjectionPort, ShardDAOPort
+from ..runtime.concurrency import ShardLockManager
 from .event_bus import PatternMatcher
 from .reliability import DeadLetterCoordinator
 
 T = TypeVar("T")
 
 logger = logging.getLogger("storage_kernel.projection")
+
+DEFAULT_CATCHUP_INTERVAL_SEC = 5.0
+"""定期追いつき（Dirty Set への全パーティション再投入）の既定間隔（秒）。0 以下で無効。"""
 
 
 class _ProjectionWorker(Generic[T]):
@@ -43,7 +48,10 @@ class _ProjectionWorker(Generic[T]):
         decode_record_fn: Callable[[RecordEnvelope[Any]], RecordEnvelope[T]],
         telemetry_sink: TelemetrySink | None,
         poll_interval_sec: float = 0.25,
+        catchup_interval_sec: float = 0.0,
+        lock_manager: ShardLockManager | None = None,
     ) -> None:
+        self._lock_manager = lock_manager
         self.projection = projection
         self.consumer_id = projection.consumer_id
         self._matchers = matchers
@@ -68,11 +76,14 @@ class _ProjectionWorker(Generic[T]):
         self._stop_requested = False
         self._stop_drain = False
         self._stop_event = threading.Event()
+        self._catchup_interval_sec = catchup_interval_sec
+        self._catchup_stop = threading.Event()
+        # 想定外の例外によるパーティション単位の連続失敗回数と、再選択を許可する時刻（time.monotonic）
+        self._consecutive_failures: dict[str, int] = {}
+        self._not_before: dict[str, float] = {}
 
         # 起動時キャッチアップ：既登録パーティションを Dirty Set へ初期投入
-        for p in self._meta_dao.list_partitions():
-            if self.matches(p.partition_key):
-                self._dirty_partitions.add(p.partition_key)
+        self._dirty_partitions.update(self._list_matching_partition_keys())
 
         self._thread = threading.Thread(
             target=self._run,
@@ -80,6 +91,33 @@ class _ProjectionWorker(Generic[T]):
             daemon=True,
         )
         self._thread.start()
+
+        self._catchup_thread: threading.Thread | None = None
+        if catchup_interval_sec > 0.0:
+            self._catchup_thread = threading.Thread(
+                target=self._catchup_loop,
+                name=f"sk-proj-catchup-{self.consumer_id[:12]}",
+                daemon=True,
+            )
+            self._catchup_thread.start()
+
+    def _list_matching_partition_keys(self) -> list[str]:
+        """登録パターンに一致する全パーティションキーを取得する（ロックを持たずに呼ぶこと）。"""
+        return [p.partition_key for p in self._meta_dao.list_partitions() if self.matches(p.partition_key)]
+
+    def _catchup_loop(self) -> None:
+        """catchup_interval_sec ごとに全一致パーティションを Dirty Set へ再投入する（F-206 定期ポーリング）。"""
+        while not self._catchup_stop.wait(timeout=self._catchup_interval_sec):
+            try:
+                keys = self._list_matching_partition_keys()
+            except Exception:
+                logger.exception("Periodic catch-up listing failed: consumer=%s", self.consumer_id)
+                continue
+            with self._cond:
+                if self._stop_requested or self._maintenance_hold:
+                    continue
+                self._dirty_partitions.update(k for k in keys if k not in self._paused_partitions)
+                self._cond.notify_all()
 
     def matches(self, partition_key: str) -> bool:
         return any(m.matches(partition_key) for m in self._matchers)
@@ -96,33 +134,47 @@ class _ProjectionWorker(Generic[T]):
 
     def resume_partition(self, partition_key: str, *, skip_current: bool) -> None:
         """一時停止中のパーティションを再開する（skip_current=True で先頭 1 件をスキップ）。"""
+        if skip_current:
+            # 状態確認からカーソル更新までを書き込みガードの中で行い、enter_maintenance の
+            # 整合点確立（進行中の更新の完了待ち）より後にカーソルが進まないようにする。
+            guard = (
+                self._lock_manager.partition_write_guard(partition_key)
+                if self._lock_manager is not None
+                else nullcontext()
+            )
+            with guard:
+                self._skip_next_record(partition_key)
         with self._cond:
-            if skip_current:
-                info = self._meta_dao.get_partition(partition_key)
-                if info is not None:
-                    current_seq = self._meta_dao.get_cursor(self.consumer_id, partition_key)
-                    next_rows = self._shard_dao.fetch_range(
-                        info.shard_id,
-                        partition_key,
-                        after_seq=current_seq,
-                        limit=1,
-                    )
-                    if next_rows:
-                        self._meta_dao.advance_cursor(self.consumer_id, partition_key, next_rows[0].seq)
             self._paused_partitions.discard(partition_key)
+            self._consecutive_failures.pop(partition_key, None)
+            self._not_before.pop(partition_key, None)
             if self.matches(partition_key):
                 self._dirty_partitions.add(partition_key)
             self._cond.notify_all()
 
+    def _skip_next_record(self, partition_key: str) -> None:
+        """カーソル直後の 1 件までカーソルを進める（該当レコードがなければ何もしない）。"""
+        info = self._meta_dao.get_partition(partition_key)
+        if info is None:
+            return
+        current_seq = self._meta_dao.get_cursor(self.consumer_id, partition_key)
+        next_rows = self._shard_dao.fetch_range(
+            info.shard_id,
+            partition_key,
+            after_seq=current_seq,
+            limit=1,
+        )
+        if next_rows:
+            self._meta_dao.advance_cursor(self.consumer_id, partition_key, next_rows[0].seq)
+
     def enter_maintenance_hold(self, *, drain: bool, deadline: float) -> bool:
         """メンテナンス用にカーソル更新を静止させる。"""
+        # 親の DAO 呼び出しはロックの外で行い、notify / register を待たせない
+        drain_keys = self._list_matching_partition_keys() if drain else []
         with self._cond:
             self._maintenance_hold = True
             self._maintenance_drain = drain
-            if drain:
-                for p in self._meta_dao.list_partitions():
-                    if self.matches(p.partition_key) and p.partition_key not in self._paused_partitions:
-                        self._dirty_partitions.add(p.partition_key)
+            self._dirty_partitions.update(k for k in drain_keys if k not in self._paused_partitions)
             self._cond.notify_all()
 
             while True:
@@ -146,13 +198,14 @@ class _ProjectionWorker(Generic[T]):
 
     def stop(self, *, drain: bool, deadline: float) -> tuple[tuple[str, ...], bool]:
         """ワーカーを停止し、(未処理パーティションタプル, タイムアウト内に完了したか) を返す。"""
+        self._catchup_stop.set()
+        # 親の DAO 呼び出しはロックの外で行い、notify / register を待たせない
+        drain_keys = self._list_matching_partition_keys() if drain else []
         with self._cond:
             self._stop_requested = True
             self._stop_drain = drain
             if drain:
-                for p in self._meta_dao.list_partitions():
-                    if self.matches(p.partition_key) and p.partition_key not in self._paused_partitions:
-                        self._dirty_partitions.add(p.partition_key)
+                self._dirty_partitions.update(k for k in drain_keys if k not in self._paused_partitions)
             else:
                 self._stop_event.set()
             self._cond.notify_all()
@@ -180,6 +233,8 @@ class _ProjectionWorker(Generic[T]):
     def _pick_next_partition(self) -> str | None:
         with self._cond:
             while True:
+                if self._stop_event.is_set():
+                    return None
                 if self._stop_requested:
                     if not self._stop_drain or not self._dirty_partitions:
                         return None
@@ -188,16 +243,58 @@ class _ProjectionWorker(Generic[T]):
                         self._cond.wait(timeout=self._poll_interval_sec)
                         continue
 
+                now = time.monotonic()
                 candidates = sorted(self._dirty_partitions - self._paused_partitions)
-                if candidates:
-                    pk = candidates[0]
+                ready = [pk for pk in candidates if self._not_before.get(pk, 0.0) <= now]
+                if ready:
+                    pk = ready[0]
                     self._dirty_partitions.discard(pk)
                     self._in_cycle = True
                     return pk
 
-                if self._stop_requested and self._stop_drain:
+                if self._stop_requested and self._stop_drain and not candidates:
                     return None
-                self._cond.wait(timeout=self._poll_interval_sec)
+                # バックオフ中のパーティションがあれば、その解除時刻までだけ待つ（スレッドは他の仕事を妨げない）
+                wait_for = self._poll_interval_sec
+                if candidates:
+                    earliest = min(self._not_before.get(pk, 0.0) for pk in candidates)
+                    wait_for = max(0.001, min(wait_for, earliest - now))
+                self._cond.wait(timeout=wait_for)
+
+    def _register_unexpected_failure(self, pk: str) -> bool:
+        """想定外の例外を記録し、再投入すべきなら True を返す。
+
+        連続失敗が retry_policy.max_attempts に達したらパーティションを一時停止する。
+        それ未満なら指数バックオフ（not-before 時刻）を設定する。ワーカースレッドは待機しない。
+        """
+        with self._cond:
+            failures = self._consecutive_failures.get(pk, 0) + 1
+            if failures >= self._retry_policy.max_attempts:
+                self._consecutive_failures.pop(pk, None)
+                self._not_before.pop(pk, None)
+                self._paused_partitions.add(pk)
+                paused = True
+            else:
+                self._consecutive_failures[pk] = failures
+                self._not_before[pk] = time.monotonic() + self._retry_policy.delay_for_attempt(failures)
+                paused = False
+        if paused:
+            logger.error(
+                "Pausing partition after %d consecutive unexpected failures: consumer=%s partition=%s",
+                failures,
+                self.consumer_id,
+                pk,
+            )
+            self._emit_telemetry(
+                "projection.partition_paused",
+                {
+                    "consumer_id": self.consumer_id,
+                    "partition_key": pk,
+                    "reason": "consecutive_unexpected_failures",
+                    "failures": failures,
+                },
+            )
+        return not paused
 
     def _run(self) -> None:
         while True:
@@ -254,7 +351,11 @@ class _ProjectionWorker(Generic[T]):
                     self.consumer_id,
                     pk,
                 )
-                requeue = True
+                requeue = self._register_unexpected_failure(pk)
+            else:
+                with self._cond:
+                    self._consecutive_failures.pop(pk, None)
+                    self._not_before.pop(pk, None)
             finally:
                 with self._cond:
                     if requeue and pk not in self._paused_partitions:
@@ -275,7 +376,11 @@ class ProjectionRunner(Generic[T]):
         default_retry_policy: RetryPolicy,
         decode_record_fn: Callable[[RecordEnvelope[Any]], RecordEnvelope[T]],
         telemetry_sink: TelemetrySink | None = None,
+        catchup_interval_sec: float = DEFAULT_CATCHUP_INTERVAL_SEC,
+        lock_manager: ShardLockManager | None = None,
     ) -> None:
+        self._lock_manager = lock_manager
+        self._catchup_interval_sec = catchup_interval_sec
         self._shard_dao = shard_dao
         self._meta_dao = meta_dao
         self._dead_letter_port = dead_letter_port
@@ -331,6 +436,8 @@ class ProjectionRunner(Generic[T]):
                 coordinator=self._coordinator,
                 decode_record_fn=self._decode_record_fn,
                 telemetry_sink=self._telemetry_sink,
+                catchup_interval_sec=self._catchup_interval_sec,
+                lock_manager=self._lock_manager,
             )
             self._workers[projection.consumer_id] = worker
 

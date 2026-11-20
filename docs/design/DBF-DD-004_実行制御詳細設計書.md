@@ -5,7 +5,7 @@ document_number: "DBF-DD-004"
 document_role: "normative"
 ssot_scope: "module_behavior"
 status: "draft"
-version: "1.1"
+version: "1.2"
 created_at: "2026-11-19"
 updated_at: "2026-11-20"
 author: "xzyozi"
@@ -39,12 +39,12 @@ related_documents:
 
 ### 1.2 単一責任範囲 (SSOT) とデータ境界
 
-- **本書の正本範囲**: `module_behavior`。実行制御モジュール群（`runtime/concurrency.py`, `runtime/maintenance.py`, `runtime/lifecycle.py`）の制御フロー、内部 DTO、カーネル全体のライフサイクル状態遷移、エラー処理、および機能テスト要件（`TR-DD4-001`〜`004`）の正本とする。
+- **本書の正本範囲**: `module_behavior`。実行制御モジュール群（`runtime/concurrency.py`, `runtime/maintenance.py`, `runtime/lifecycle.py`）の制御フロー、内部 DTO、カーネル全体のライフサイクル状態遷移、エラー処理、および機能テスト要件（`TR-DD4-001`〜`006`）の正本とする。
 - **データ境界 (DTO vs DAO)**: 本書はインメモリのロックテーブル、アクティブ操作カウンタ、ライフサイクル状態を管理する。永続化データの排他要件はデータ構造仕様書（[`DBF-DS-001`](./DBF-DS-001_データ構造仕様書.md) 3.3節）を参照する。
 - **BDとの関係**: システム全体のアーキテクチャ方針は基本設計書（[`DBF-BD-001`](./DBF-BD-001_基本設計書.md)）を正本とし、本書はコンポーネント `C-006` を具体化する。
-- **依存の向き**: `runtime/` は `contracts/`・`ports/` にだけ依存し、`core/` を import しない（BD の `C-006`）。`ProjectionRunner` と `EventDispatcher` に要求する操作（`stop`・`enter_maintenance`・`exit_maintenance`）は `runtime/collaborators.py` の Protocol（`ProjectionControl`・`SubscriberControl`）として定義し、`core/kernel.py` が `core/` の実装を注入する。本書で `ProjectionRunner` / `EventDispatcher` と記す箇所は、この Protocol を満たす実装を指す。
 - **他文書との関係**: 要求、環境、運用、テスト、ADR、レビュー文書はそれぞれの `ssot_scope` を正本とし、本書の制御仕様を上書きしない。
 - **他文書へ委譲する情報**: 品質ゲートは環境・開発基盤仕様書（[`DBF-ENV-001`](../setup/DBF-ENV-001_環境・開発基盤仕様書.md)）、テストケース・実行結果・証跡はテスト計画・結果報告書を正本とし、本書へ再掲しない。
+- **依存の向き**: `runtime/` は `contracts/`・`ports/` にだけ依存し、`core/` を import しない（BD の `C-006`）。`ProjectionRunner` と `EventDispatcher` に要求する操作（`stop`・`enter_maintenance`・`exit_maintenance`）は `runtime/collaborators.py` の Protocol（`ProjectionControl`・`SubscriberControl`）として定義し、`core/kernel.py` が `core/` の実装を注入する。本書で `ProjectionRunner` / `EventDispatcher` と記す箇所は、この Protocol を満たす実装を指す。
 - **外部公開契約**: 公開 API `set_partition_status`（`IF-006`）、`enter_maintenance`（`IF-007`）、`exit_maintenance`（`IF-008`）、`close`（`IF-010`）、および `MaintenanceHooks`（`IF-109`）の外部契約は IF/API仕様書（[`DBF-IF-001`](./DBF-IF-001_IF仕様書.md)）を正本とする。
 - **責務の対象外**: バックアップファイルの具体的なコピー手順や復旧訓練手順は運用手順書（OP）へ委譲する。
 - **矛盾時の扱い**: 文書の更新日ではなく、該当する `ssot_scope` の正本を更新し、関連文書を追従させる。
@@ -75,6 +75,16 @@ related_documents:
   2. 対象 `partition_key` 専用の `threading.RLock` を獲得してコンテキスト内へ入る。
   3. コンテキスト終了時（`finally` 節）に `partition_key` の `RLock` を解放し、グローバル状態ロック下で `active_mutators` を `-1` する。`active_mutators == 0` になった場合は、`enter_maintenance` または `close` で待機中のスレッドへ `notify_all()` を送る。
   4. `set_partition_status` も同じ `partition_write_guard(partition_key)` を獲得して `MetaDAOPort.set_partition_status` とキャッシュ更新を行うため、`read_only` への変更と `append` が完全に直列化される。
+  5. `resume_projection(skip_current=True)` も、停止中パーティションの先頭 1 件の確認から `MetaDAOPort.advance_cursor` までを同じ `partition_write_guard(partition_key)` の中で行う。確認と更新の間に `enter_maintenance` が割り込んでも、カーソル更新は `active_mutators` に数えられるため、メンテナンスの整合点（`on_enter_maintenance` 呼び出し）は更新の完了後に確立される。`skip_current=False` はカーソルを更新しないためガードを取らない。
+  6. 公開 API ごとのライフサイクル別の扱いは次のとおり（`TR-DD4-005`, `TR-DD4-006`）。
+
+     | 公開 API                                                     | `MAINTENANCE_ENTERING` / `MAINTENANCE` | `CLOSING` / `CLOSED` |
+     | :----------------------------------------------------------- | :------------------------------------- | :------------------- |
+     | `append` / `write_snapshot` / `set_partition_status`         | `KernelMaintenanceError`               | `KernelClosedError`  |
+     | `register_projection`（Projection がカーソルを更新するため） | `KernelMaintenanceError`               | `KernelClosedError`  |
+     | `resume_projection(skip_current=True)`                       | `KernelMaintenanceError`               | `KernelClosedError`  |
+     | `resume_projection(skip_current=False)`                      | 許可（カーソルを更新しない）           | `KernelClosedError`  |
+     | `subscribe`（永続状態を変えない）                            | 許可                                   | `KernelClosedError`  |
 - **事前条件 (Pre-conditions)**: `partition_key` が非空文字列であること。
 - **事後条件 (Post-conditions)**: コンテキスト内で同一 `partition_key` に対する他の書き込みや状態変更が並行実行されないこと、およびコンテキスト中にメンテナンスモードやシャットダウン完了へ遷移しないことが保証される。
 - **タイムアウト / キャンセル**: 同一パーティションの先行トランザクション完了まで待機する。
@@ -87,7 +97,7 @@ related_documents:
 - **機能概要**:
   - **`enter_maintenance(reason, *, drain_projections=False, timeout=30.0)`**:
     1. グローバル状態ロック下で状態を確認する。`CLOSING`/`CLOSED` なら `KernelClosedError`、既に `MAINTENANCE_ENTERING`/`MAINTENANCE` なら `KernelMaintenanceError` を送出する。
-    2. 状態を `MAINTENANCE_ENTERING` へ変更する（この瞬間から新規の `append`, `write_snapshot`, `set_partition_status`, `resume_projection(skip_current=True)` はすべて `KernelMaintenanceError` で拒否される）。
+    2. 状態を `MAINTENANCE_ENTERING` へ変更する（この瞬間から新規の `append`, `write_snapshot`, `set_partition_status`, `register_projection`, `resume_projection(skip_current=True)` はすべて `KernelMaintenanceError` で拒否される。`subscribe` は永続状態を変えないため拒否しない）。
     3. `active_mutators == 0`（進行中の全書き込みトランザクション完了）になるまで残り `timeout` 秒以内で待機する。
     4. `ProjectionRunner` に対しメンテナンス一時停止を要求する。`drain_projections=False`（既定）の場合は現在実行中の `apply_batch` + `advance_cursor` の1サイクル完了のみを待機する。`drain_projections=True` の場合は全登録済み Projection が最新 `seq` に追いつくまで残り `timeout` 秒以内で待機してからカーソル更新を静止させる。
     5. 待機中に `timeout` を超過した場合は、状態を `RUNNING` に戻して Projection の静止要求を解除し、`TimeoutError` を送出する。
@@ -258,12 +268,14 @@ sequenceDiagram
 
 ### 5.1 機能テスト要件一覧
 
-| 要件ID     | 対象機能ID    | 保証すべき振る舞い・条件                                                                                                                                                                                                                                                                                                      | 検証観点                     | 対応テストケース                                                                                            |
-| :--------- | :------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------- | :---------------------------------------------------------------------------------------------------------- |
-| TR-DD4-001 | F-401         | **状態遷移と `append` の並行競合防止**: `set_partition_status(partition_key, "read_only")` と `append(partition_key, ...)` を複数スレッドから並行に実行しても、`read_only` への遷移が完了した後に書き込みが成功することが一切ないこと（Issue #3 C5）                                                                          | 並行性 / 排他制御            | `tests/unit/test_concurrency.py::test_concurrent_status_transition_to_read_only_prevents_subsequent_writes` |
-| TR-DD4-002 | F-402 / F-403 | **メンテナンスモードの遮断と進行中トランザクション待機**: `enter_maintenance` 中の書き込み・状態変更・カーソル更新が `KernelMaintenanceError` で拒否され、開始前に進行中だったトランザクションがすべて完了した後に `MaintenanceHooks.on_enter_maintenance` が呼ばれ、`exit_maintenance` 後に通常運転へ戻ること（Issue #4 D2） | 正常 / 異常 / 排他制御       | `tests/unit/test_maintenance.py::test_maintenance_mode_blocks_writes_and_waits_for_in_flight_transactions`  |
-| TR-DD4-003 | F-404         | **`close()` 開始後の新規書き込み拒否と進行中書き込みの完了保証**: `close()` 開始後に呼ばれた `append` が即座に `KernelClosedError` になり、開始時点で進行中だった `write_transaction` は中断されずに COMMIT まで完了してから停止し、`ShutdownReport` が返ること（Issue #3 C4）                                                | 正常 / 異常 / ライフサイクル | `tests/unit/test_lifecycle.py::test_close_rejects_new_writes_and_completes_in_flight_writes`                |
-| TR-DD4-004 | F-404         | **`close()` のドレインオプションとタイムアウト制御**: `drain_projections=True` / `drain_subscribers=True` 指定時にキュー処理完了を待ち、タイムアウト超過時はハングアップせず `completed_cleanly=False` と未処理件数を記録した `ShutdownReport` を返すこと（Issue #3 C4）                                                      | 境界 / タイムアウト          | `tests/unit/test_lifecycle.py::test_close_drain_options_and_timeout_report`                                 |
+| 要件ID     | 対象機能ID            | 保証すべき振る舞い・条件                                                                                                                                                                                                                                                                                                                                | 検証観点                           | 対応テストケース                                                                                            |
+| :--------- | :-------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :--------------------------------- | :---------------------------------------------------------------------------------------------------------- |
+| TR-DD4-001 | F-401                 | **状態遷移と `append` の並行競合防止**: `set_partition_status(partition_key, "read_only")` と `append(partition_key, ...)` を複数スレッドから並行に実行しても、`read_only` への遷移が完了した後に書き込みが成功することが一切ないこと（Issue #3 C5）                                                                                                    | 並行性 / 排他制御                  | `tests/unit/test_concurrency.py::test_concurrent_status_transition_to_read_only_prevents_subsequent_writes` |
+| TR-DD4-002 | F-402 / F-403         | **メンテナンスモードの遮断と進行中トランザクション待機**: `enter_maintenance` 中の書き込み・状態変更・カーソル更新が `KernelMaintenanceError` で拒否され、開始前に進行中だったトランザクションがすべて完了した後に `MaintenanceHooks.on_enter_maintenance` が呼ばれ、`exit_maintenance` 後に通常運転へ戻ること（Issue #4 D2）                           | 正常 / 異常 / 排他制御             | `tests/unit/test_maintenance.py::test_maintenance_mode_blocks_writes_and_waits_for_in_flight_transactions`  |
+| TR-DD4-003 | F-404                 | **`close()` 開始後の新規書き込み拒否と進行中書き込みの完了保証**: `close()` 開始後に呼ばれた `append` が即座に `KernelClosedError` になり、開始時点で進行中だった `write_transaction` は中断されずに COMMIT まで完了してから停止し、`ShutdownReport` が返ること（Issue #3 C4）                                                                          | 正常 / 異常 / ライフサイクル       | `tests/unit/test_lifecycle.py::test_close_rejects_new_writes_and_completes_in_flight_writes`                |
+| TR-DD4-004 | F-404                 | **`close()` のドレインオプションとタイムアウト制御**: `drain_projections=True` / `drain_subscribers=True` 指定時にキュー処理完了を待ち、タイムアウト超過時はハングアップせず `completed_cleanly=False` と未処理件数を記録した `ShutdownReport` を返すこと（Issue #3 C4）                                                                                | 境界 / タイムアウト                | `tests/unit/test_lifecycle.py::test_close_drain_options_and_timeout_report`                                 |
+| TR-DD4-005 | F-401 / F-402 / F-404 | **`resume_projection` の競合防止と close 後の拒否**: `resume_projection(skip_current=True)` のカーソル更新中に `enter_maintenance` が始まっても、更新が完了するまでメンテナンスの整合点（`on_enter_maintenance`）が確立されず、確立後にカーソルが進まないこと。`close()` 後は `skip_current` の値に関わらず `KernelClosedError` になること（Issue #40） | 並行性 / 排他制御 / ライフサイクル | `tests/unit/test_api_consistency.py::TestResumeProjectionConsistency`                                       |
+| TR-DD4-006 | F-402                 | **メンテナンス中の `subscribe` / `register_projection`**: メンテナンス中でも `subscribe` は成功し、解除後に配信を受け取れること。`register_projection` は `KernelMaintenanceError` で拒否され、`exit_maintenance` 後に成功すること。`close()` 後の `subscribe` は `KernelClosedError` になること（Issue #40）                                           | 正常 / 異常 / 排他制御             | `tests/unit/test_api_consistency.py::TestMaintenanceSubscribeAndRegister`                                   |
 
 ### 5.2 適用する品質ゲート
 
@@ -291,7 +303,8 @@ sequenceDiagram
 
 ## 7. 改訂履歴 (Change Log)
 
-| 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                                                                             |
-| :------ | :--------- | :----- | :------------------------------------------------------------------------------------------------------------------- |
-| Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #15 に基づき実行制御 runtime/concurrency, maintenance, lifecycle の詳細設計を制定）                  |
-| Rev.1.1 | 2026-11-20 | xzyozi | Issue #37 に基づき runtime から core への依存を解消し、`runtime/collaborators.py` の Protocol 経由で注入する旨を追記 |
+| 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                                                                                                                                                                                    |
+| :------ | :--------- | :----- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #15 に基づき実行制御 runtime/concurrency, maintenance, lifecycle の詳細設計を制定）                                                                                                                         |
+| Rev.1.1 | 2026-11-20 | xzyozi | `resume_projection(skip_current=True)` を `partition_write_guard` 内で行う契約、メンテナンス中の `subscribe`（許可）と `register_projection`（拒否）の扱い、close 後の拒否を明記し、`TR-DD4-005`・`006` を追加（Issue #40） |
+| Rev.1.2 | 2026-11-20 | xzyozi | Issue #37 に基づき runtime から core への依存を解消し、`runtime/collaborators.py` の Protocol 経由で注入する旨を追記                                                                                                        |

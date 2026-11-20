@@ -18,6 +18,7 @@ from ..contracts.envelope import (
     SubscriptionHandle,
     WriteAck,
 )
+from ..contracts.errors import KernelClosedError
 from ..contracts.telemetry import TelemetryEvent, TelemetrySink
 from ..ports.codec import PayloadCodec, PayloadUpcaster
 from ..ports.dao import DeadLetterPort, MetaDAOPort, ProjectionPort, ShardDAOPort
@@ -92,6 +93,7 @@ class StorageKernel(Generic[T]):
             default_retry_policy=config.default_retry_policy,
             decode_record_fn=self._upcast_pipeline.upcast_and_decode_envelope,
             telemetry_sink=telemetry_sink,
+            lock_manager=self._lock_manager,
         )
         self._sync_engine = CursorSyncEngine(
             shard_dao=shard_dao,
@@ -129,6 +131,11 @@ class StorageKernel(Generic[T]):
                     },
                 )
             )
+
+    def _check_not_closed(self) -> None:
+        """close() 開始後なら KernelClosedError を送出する（メンテナンス中は許容する）。"""
+        if self._lock_manager.lifecycle_phase in ("CLOSING", "CLOSED"):
+            raise KernelClosedError("storage_kernel is closed")
 
     def _dispatch_post_commit(self, envelope: RecordEnvelope[T], is_snapshot: bool) -> None:
         self._event_dispatcher.publish(cast(RecordEnvelope[object], envelope), is_snapshot=is_snapshot)
@@ -191,8 +198,11 @@ class StorageKernel(Generic[T]):
         drop_policy: DropPolicy = "drop_newest",
         on_error: Callable[[RecordEnvelope[T], Exception], None] | None = None,
     ) -> SubscriptionHandle:
-        """At-Most-Once の非同期購読を登録する（IF-003 / F-201）。"""
-        self._lock_manager.check_mutable_state()
+        """At-Most-Once の非同期購読を登録する（IF-003 / F-201）。
+
+        購読は永続状態を変えないため、メンテナンス中でも登録できる（close 後は拒否する）。
+        """
+        self._check_not_closed()
         return self._event_dispatcher.subscribe(
             pattern,
             cast(Callable[[RecordEnvelope[object]], None], callback),
@@ -230,7 +240,9 @@ class StorageKernel(Generic[T]):
         skip_current: bool = False,
     ) -> None:
         """pause_partition で一時停止した投影を再開する（IF-005 / F-203）。"""
+        self._check_not_closed()
         if skip_current:
+            # 早期拒否。確認から更新までの競合は ProjectionRunner 側の partition_write_guard が防ぐ。
             self._lock_manager.check_mutable_state()
         self._projection_runner.resume_partition(
             consumer_id,

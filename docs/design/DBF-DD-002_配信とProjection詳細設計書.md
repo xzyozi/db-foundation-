@@ -5,9 +5,9 @@ document_number: "DBF-DD-002"
 document_role: "normative"
 ssot_scope: "module_behavior"
 status: "draft"
-version: "1.0"
+version: "1.1"
 created_at: "2026-11-19"
-updated_at: "2026-11-19"
+updated_at: "2026-11-20"
 author: "xzyozi"
 owner: "xzyozi"
 purpose: "core/event_bus.py、core/projection.py、core/reliability.py におけるパターン照合、subscribe有界キューとdrop_policy、ProjectionRunnerのDirty Set追いつき、指数バックオフ再試行、Poison Pill単件特定、DLQ隔離、pause_partitionと再開の制御仕様および機能テスト要件を定義するため"
@@ -34,11 +34,11 @@ related_documents:
 本モジュール群（`core/event_bus.py` の `EventDispatcher`、`core/projection.py` の `ProjectionRunner`、`core/reliability.py` の `DeadLetterCoordinator`）は、書き込み確定（Write-Before-ACK）後のレコードを2つの独立した配信レーンへ非同期に届ける責務を担う（[`ADR-003`](../adr/ADR-003_配信保証の2レーン分離とSource_of_Truth方針.md)）。
 
 1. **通知レーン（`EventDispatcher` / `subscribe`）**: 購読者ごとに独立した有界キューとディスパッチ制御を持ち、At-Most-Once で低遅延通知を行う。キュー満杯時は `drop_policy`（`drop_newest` / `drop_oldest` / `disconnect`）に従って処理し、遅い購読者やコールバック例外が他の購読者・Projection・書き込みスレッドを一切阻害しないようにする。また `__snapshot__` レコードは配信しない。
-2. **投影レーン（`ProjectionRunner` & `DeadLetterCoordinator` / `register_projection`, `resume_projection`）**: シャードDBと `MetaDAOPort` のカーソルを Source of Truth とし、At-Least-Once で `ProjectionPort.apply_batch` を実行する。インメモリ通知の取りこぼしやキュー溢れは Dirty Set に記録し、起動時・定期ポーリング時・ギャップ検知時（`event.seq > last_seq + 1`）に `ShardDAOPort.fetch_range`（および読み取り時 Upcast）で自動的に追いつく。失敗時は `RetryPolicy` で再試行し、上限超過時はバッチを1件ずつ再実行して原因レコード（Poison Pill）を特定した上で、`dlq_and_skip`（DLQ隔離＋カーソル進行）または `pause_partition`（該当パーティションの投影一時停止）を実行する。
+2. **投影レーン（`ProjectionRunner` & `DeadLetterCoordinator` / `register_projection`, `resume_projection`）**: シャードDBと `MetaDAOPort` のカーソルを Source of Truth とし、At-Least-Once で `ProjectionPort.apply_batch` を実行する。インメモリ通知の取りこぼしやキュー溢れは Dirty Set に記録し、起動時・定期ポーリング時・ギャップ検知時（`event.seq > last_seq + 1`）に `ShardDAOPort.fetch_range`（および読み取り時 Upcast）で自動的に追いつく。追いつきは常にカーソルからの `fetch_range` で行うため、ギャップ検知の専用処理は持たず、通知の欠落や順序の乱れは Dirty Set への投入だけで暗黙に回復される。失敗時は `RetryPolicy` で再試行し、上限超過時はバッチを1件ずつ再実行して原因レコード（Poison Pill）を特定した上で、`dlq_and_skip`（DLQ隔離＋カーソル進行）または `pause_partition`（該当パーティションの投影一時停止）を実行する。
 
 ### 1.2 単一責任範囲 (SSOT) とデータ境界
 
-- **本書の正本範囲**: `module_behavior`。配信・投影モジュール群（`core/event_bus.py`, `core/projection.py`, `core/reliability.py`）の制御フロー、内部 DTO、状態遷移、エラー・Poison Pill 処理、および機能テスト要件（`TR-DD2-001`〜`006`）の正本とする。
+- **本書の正本範囲**: `module_behavior`。配信・投影モジュール群（`core/event_bus.py`, `core/projection.py`, `core/reliability.py`）の制御フロー、内部 DTO、状態遷移、エラー・Poison Pill 処理、および機能テスト要件（`TR-DD2-001`〜`010`）の正本とする。
 - **データ境界 (DTO vs DAO)**: 本書は購読スロット、Dirty Set、投影ワーカー状態などのインメモリ DTO を管理する。永続化されるカーソル（`CONSUMER_CURSOR`）および Dead Letter（`DEAD_LETTER`）の論理スキーマはデータ構造仕様書（[`DBF-DS-001`](./DBF-DS-001_データ構造仕様書.md)）を参照する。
 - **BDとの関係**: システム全体のアーキテクチャ方針は基本設計書（[`DBF-BD-001`](./DBF-BD-001_基本設計書.md)）を正本とし、本書はコンポーネント `C-004` を具体化する。
 - **他文書との関係**: 要求、環境、運用、テスト、ADR、レビュー文書はそれぞれの `ssot_scope` を正本とし、本書の制御仕様を上書きしない。
@@ -87,8 +87,11 @@ related_documents:
 - **機能概要**:
   - 登録時に `ProjectionPort.consumer_id` の一意性と `failure_policy`（省略時は `DeadLetterPort` の有無で `"dlq_and_skip"` または `"pause_partition"` に決定）を検証し、Projection 専用の `ProjectionRunner` ワーカーを起動する。
   - **起動時キャッチアップ**: `MetaDAOPort.list_partitions()` で全登録済みパーティションを取得し、`partition_patterns` に一致するすべての `partition_key` を Dirty Set に初期投入する。
+  - **定期ポーリング追いつき**: `ProjectionRunner` のコンストラクタ引数 `catchup_interval_sec`（既定 `5.0` 秒、`0` 以下で無効）ごとに、`partition_patterns` に一致し、かつ一時停止中でないすべてのパーティションを Dirty Set へ再投入する。`list_partitions()` はロックの外で呼ぶ。追いつきは `fetch_range(after_seq=cursor)` で行うため、取りこぼしがなければ空振りで終わる。メンテナンス静止中と停止要求後は再投入しない。
   - **Fast Path 通知と Dirty Set**: 書き込み完了時に `notify(envelope)` が呼ばれる。対象パターンに一致しない場合、または `include_snapshots=False` かつ `record_type == "__snapshot__"`（ただしカーソル進行対象としてギャップを作らないよう Dirty Set 経由またはスキップ処理）の場合は適切にフィルタする。インメモリ通知キューが満杯の場合、または受け取った `envelope.seq > current_cursor + 1`（ギャップ検知）の場合は、イベントを黙って捨てずに該当 `partition_key` を Dirty Set（`set[str]`）へ追加する。
   - **Catch-up 実行**: Dirty Set から `partition_key`（一時停止中 `paused_partitions` に含まれるものを除く）を取り出し、`last_seq = MetaDAOPort.get_cursor(consumer_id, partition_key)` を取得し、`ShardDAOPort.fetch_range(shard_id, partition_key, after_seq=last_seq, limit=batch_size)` で未処理レコード群を取得する。取得した各レコードに読み取り時 Upcast（`DBF-DD-003` `F-302`）を適用する。`include_snapshots=False` の場合はバッチから `__snapshot__` レコードを除いたスライスを `F-207`（`apply_batch`）へ渡し、バッチ全体の最終 `seq` まで `MetaDAOPort.advance_cursor` を進める（メンテナンスモード中は待機または中断する）。まだ `len(fetched) == batch_size` であれば再度 Dirty Set に戻して追いつきを継続する。
+  - **想定外の例外のバックオフ**: `apply_batch` 以外（`MetaDAOPort` / `ShardDAOPort` の障害など）で想定外の例外が出たパーティションは、パーティション単位の連続失敗カウンタを増やし、`retry_policy`（`delay = min(max_delay_sec, initial_delay_sec * backoff_multiplier ** (n - 1))`）の待機時間が過ぎる時刻（not-before 時刻）まで再選択しない。ワーカースレッドは待機でブロックせず、他のパーティションの処理を続ける。連続失敗が `retry_policy.max_attempts` に達したら、そのパーティションを `pause_partition` と同じ扱いで一時停止し、エラーログと `projection.partition_paused` テレメトリを出す。処理が成功したらカウンタをリセットし、`resume_projection` でもリセットする。
+  - **ロック外での DAO 呼び出し**: 親が実装する `MetaDAOPort.list_partitions()` は、停止（`stop(drain=True)`）・メンテナンス静止（`drain=True`）・定期追いつきのいずれでも内部ロックを保持せずに呼び、ロック内では Dirty Set への追加だけを行う。これにより遅い DAO が `notify` / `register` を止めない。
 - **事前条件 (Pre-conditions)**: `ProjectionPort.apply_batch` が `(partition_key, seq)` に対して冪等であること。
 - **事後条件 (Post-conditions)**: `apply_batch` が正常完了した後にのみ `advance_cursor` が呼ばれ、Event Bus のキュー溢れや再起動があっても最終的に全レコードが欠落なく投影される。
 - **タイムアウト / キャンセル**: `close()` または `enter_maintenance()` 呼び出し時に新規バッチ取得を停止する。
@@ -106,7 +109,7 @@ related_documents:
   3. **`failure_policy` の適用**:
      - `"dlq_and_skip"`: `DeadLetterPort.put_dead_letter(DeadLetterRecord(...))` を呼び出して原因レコード1件を永続化隔離し、`MetaDAOPort.advance_cursor(consumer_id, partition_key, poison_record.seq)` でカーソルを進めてから、同じバッチの残りレコードの単件適用を最後まで継続する。
      - `"pause_partition"`: カーソルを進めず（原因レコードの直前の `seq` で止めたまま）、該当 `partition_key` を `paused_partitions` に追加してエラーイベント・ログを出力し、当該パーティションの投影ループを停止する（他のパーティションの投影は継続する）。
-  4. **再開（`F-203` `resume_projection`）**: 指定 `(consumer_id, partition_key)` が `paused_partitions` にあるとき、`skip_current=True` が指定されていれば停止原因となっていた先頭未処理レコード1件（`current_cursor + 1`、または `fetch_range(..., limit=1)` の先頭 `seq`）まで `MetaDAOPort.advance_cursor` でカーソルを進める。その後 `paused_partitions` から当該 `partition_key` を除去し、Dirty Set に再追加してワーカーを起床させる。
+  4. **再開（`F-203` `resume_projection`）**: 指定 `(consumer_id, partition_key)` が `paused_partitions` にあるとき、`skip_current=True` が指定されていれば停止原因となっていた先頭未処理レコード1件（`current_cursor + 1`、または `fetch_range(..., limit=1)` の先頭 `seq`）まで `MetaDAOPort.advance_cursor` でカーソルを進める。この確認とカーソル更新は `partition_write_guard`（[`DBF-DD-004`](./DBF-DD-004_実行制御詳細設計書.md)）の中で行い、`enter_maintenance` の整合点確立後にカーソルが進まないようにする。その後 `paused_partitions` から当該 `partition_key` を除去し、Dirty Set に再追加してワーカーを起床させる。
 - **事前条件 (Pre-conditions)**: `"dlq_and_skip"` 選択時は `DeadLetterPort` が注入されていること。
 - **事後条件 (Post-conditions)**: `"dlq_and_skip"` では Poison Pill 1件のみが DLQ に格納されて残りの正常レコードはすべて適用される。`"pause_partition"` では原因レコードでカーソルが停止し、`resume_projection` でいつでも再開できる。
 - **タイムアウト / キャンセル**: 再試行待機中に `close()` が呼ばれた場合は即座に待機を中断し、カーソルを進めずに終了する（次回起動時に再処理される）。
@@ -145,6 +148,9 @@ related_documents:
 | `ProjectionWorkerState.include_snapshots` | `bool` | 必須 | 不可 | `False` | `True` のときのみ `__snapshot__` を `apply_batch` に渡す | - |
 | `ProjectionWorkerState.dirty_partitions` | `set[str]` | 必須 | 不可 | 空集合 | 追いつきが必要な `partition_key` の集合（ロック保護） | Dirty Set |
 | `ProjectionWorkerState.paused_partitions` | `set[str]` | 必須 | 不可 | 空集合 | `pause_partition` により一時停止中の `partition_key` 集合 | `resume_projection` で解除 |
+| `ProjectionWorkerState.catchup_interval_sec` | `float` | 必須 | 不可 | `5.0` | `0` 以下で定期追いつきを無効化 | `ProjectionRunner` のコンストラクタ引数 |
+| `ProjectionWorkerState.consecutive_failures` | `dict[str, int]` | 必須 | 不可 | 空 | 想定外の例外の連続失敗回数（`partition_key` 単位）。成功または再開でリセット | `retry_policy.max_attempts` 到達で一時停止 |
+| `ProjectionWorkerState.not_before` | `dict[str, float]` | 必須 | 不可 | 空 | 再選択を許可する `time.monotonic()` 時刻（`partition_key` 単位） | バックオフ待機の管理 |
 
 ### 2.4 出力 DTO スキーマ・戻り値仕様
 
@@ -281,8 +287,11 @@ sequenceDiagram
 | 購読者 `callback` 内の任意例外 | 購読者処理エラー | `subscribe` のコールバック実行中に例外送出 | 0回（At-Most-Once） | なし（再試行しない） | 継続（`Active` 維持） | `on_error` ハンドラまたはログで例外原因を修正する | 他の購読者・Projection は一切止まらず、次のイベント処理へ進む |
 | `ProjectionPort.apply_batch` の一時的エラー | 投影一時障害 | DBロック競合等で `apply_batch` が失敗 | `RetryPolicy.max_attempts`（既定3回） | `apply_batch` が `(partition_key, seq)` で冪等であること | 自動回復（`CursorAdvancing`） | 自動回復するため対応不要 | 失敗中は `advance_cursor` が呼ばれず、再試行で全件適用される |
 | `ProjectionPort.apply_batch` の恒久的エラー（Poison Pill） | 投影データ不整合 / バグ | バッチ再試行上限超過後、単件再実行でも `max_attempts` 回失敗 | バッチ N回 ＋ 単件 N回 | 単件ごとに直前の正常レコードまではカーソル確定済み | `dlq_and_skip`: DLQ隔離して継続 / `pause_partition`: `Paused` | `list_dead_letters` で原因を確認するか、修正後に `resume_projection(skip_current=...)` を呼ぶ | 同じバッチ内の正常レコードは確実に適用され、Poison Pill 1件のみが隔離または停止対象となる |
-| `SchemaVersionError`（投影読み取り時） | スキーマ移行エラー | `fetch_range` 後の Upcast で未知の版または変換経路欠落 | 0回（リトライ不可の恒久エラー） | `PayloadUpcaster` を修正して再起動または `resume_projection` | `Paused`（データ保護のため DLQ スキップせず当該パーティションを一時停止） | `PayloadUpcaster` または `schema_registry` を修正する | カーソルを進めず停止するため、Upcaster 修正後に欠落なく投影を再開できる |
+| `SchemaVersionError`（投影読み取り時） | スキーマ移行エラー | `fetch_range` 後の Upcast で未知の版または変換経路欠落 | 0回（リトライ不可の恒久エラー） | `PayloadUpcaster` を修正して再起動または `resume_projection` | `Paused`（`failure_policy` に関わらず DLQ スキップせず当該パーティションを一時停止） | `PayloadUpcaster` または `schema_registry` を修正する | カーソルを進めず停止するため、Upcaster 修正後に欠落なく投影を再開できる |
+| 想定外の例外（DAO 障害等） | 基盤・外部依存障害 | `apply_batch` 以外の処理（`get_partition` / `get_cursor` / `fetch_range` など）で例外送出 | 連続 `RetryPolicy.max_attempts` 回（バックオフ付き） | 失敗中は `advance_cursor` が呼ばれない | 上限未満: 自動回復 / 上限到達: `Paused`（`projection.partition_paused` を発行） | 依存先（DB 等）を復旧し `resume_projection` を呼ぶ | 失敗したパーティションだけが待機し、他のパーティションの投影と `notify` は止まらない（ビジーループにならない） |
 | `ValueError`（登録・再開引数不正） | 入力契約違反 | 不正な購読パターン、重複/未登録 `consumer_id`、DLQ なしでの `dlq_and_skip` 指定 | 0回（不可） | なし | 呼び出し拒否 | 引数または DI 構成を修正する | 既存の購読者・Projection 状態は変更されない |
+
+`SchemaVersionError` を `dlq_and_skip` でも一時停止とする理由: 変換経路の欠落は個別レコードの不具合（Poison Pill）ではなく、同じ `record_type` のレコード全体に及ぶ。DLQ へ隔離してカーソルを進めると欠落が全レコードへ広がるため、原因を直してから `resume_projection` で再開する運用を仕様とする（`TR-DD2-010`）。
 
 ---
 
@@ -300,6 +309,10 @@ sequenceDiagram
 | TR-DD2-004 | F-203 / F-207 | **Poison Pill の単件隔離と一時停止からの再開**: バッチ内に1件の Poison Pill があるとき、`dlq_and_skip` ではその1件だけが `DeadLetterPort` に隔離されて同じバッチの正常なレコードはすべて適用されること。また `pause_partition` で停止したパーティションが `resume_projection(skip_current=False/True)` で再開できること（Issue #3） | 異常 / 隔離 / 運用回復 | `tests/unit/test_projection.py::test_poison_pill_single_record_isolation_and_resume` |
 | TR-DD2-005 | F-201 / F-202 / F-205 / F-206 | **`__snapshot__` の配信フィルタリング**: `record_type="__snapshot__"` のレコードが通常の `subscribe` と既定（`include_snapshots=False`）の Projection には届かず、`include_snapshots=True` を指定した Projection にだけ届くこと（Issue #4） | 正常 / フィルタ | `tests/unit/test_projection.py::test_snapshot_filtering_for_subscribers_and_projections` |
 | TR-DD2-006 | F-204 | **購読パターン3種の照合と不正パターンの拒否**: 完全一致、`*`、末尾ワイルドカード（`chat:*`）が正しく照合され、途中の `*` などの不正パターンが `ValueError` で拒否されること（Issue #3） | 正常 / 境界 / 異常 | `tests/unit/test_event_bus.py::test_subscription_pattern_matching_and_validation` |
+| TR-DD2-007 | F-202 / F-206 | **定期ポーリングによる追いつき**: 通知（`notify`）を経由せずに書き込まれたレコードが、`catchup_interval_sec` ごとの Dirty Set 再投入で Projection に届くこと。`catchup_interval_sec <= 0` では再投入されないこと（Issue #39） | 正常 / 信頼性 | `tests/unit/test_projection.py::TestPeriodicCatchup` |
+| TR-DD2-008 | F-206 | **親 DAO 呼び出し中のロック非保持**: `list_partitions` が遅くても、`stop(drain=True)` と `enter_maintenance(drain=True)` の実行中に別スレッドの `notify` / `register` がブロックされないこと（Issue #39） | 並行性 | `tests/unit/test_projection.py::TestDaoCallsOutsideLock` |
+| TR-DD2-009 | F-206 / F-207 | **想定外の例外のバックオフと一時停止**: 常に例外を出す DAO でもビジーループにならず（呼び出し回数が `max_attempts` に収まる）、他のパーティションの投影が止まらず、上限到達で一時停止してテレメトリが出て、原因解消後に `resume` で再開できること。成功で連続失敗カウンタがリセットされること（Issue #39） | 異常 / 信頼性 | `tests/unit/test_projection.py::TestUnexpectedFailureBackoff` |
+| TR-DD2-010 | F-206 / F-207 | **`SchemaVersionError` は `failure_policy` に関わらず一時停止**: `dlq_and_skip` でも DLQ に隔離せず、カーソルを進めずに当該パーティションが一時停止すること（Issue #39） | 異常 / データ保護 | `tests/unit/test_projection.py::TestSchemaVersionErrorPausesPartition` |
 
 ### 5.2 適用する品質ゲート
 
@@ -330,3 +343,4 @@ sequenceDiagram
 | 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                              |
 | :------ | :--------- | :----- | :-------------------------------------------------------------------- |
 | Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #15 に基づき配信とProjection core/event_bus, projection, reliability の詳細設計を制定） |
+| Rev.1.1 | 2026-11-20 | xzyozi | 定期ポーリング追いつき（`catchup_interval_sec`）、ロック外での DAO 呼び出し、想定外例外のバックオフと一時停止、`SchemaVersionError` の一時停止理由を明記し、`TR-DD2-007`〜`010` を追加（Issue #39） |
