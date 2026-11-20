@@ -15,6 +15,7 @@
 - **`fix/<修正内容>`**: バグ修正用ブランチ。`develop` から分岐し、`develop` へマージします。
 - **`docs/<ドキュメント名>`**: ドキュメント更新専用ブランチ。
 - **`hotfix/<緊急修正>`**: 本番の急激な不具合修正用。`main` から分岐し、`main` および `develop` へマージします。
+- **`release/v<MAJOR.MINOR.PATCH>`**: リリース準備用。`develop` から分岐し、`main` へマージします（手順は「5. リリース手順」）。
 
 ---
 
@@ -72,3 +73,43 @@ git cleanup
 - 種別はこの 4 種に揃えます。`[chore]`・`[perf]` などは使いません。
 - この規約は運用の約束として扱い、CI では検査しません（#43 の判断）。マージ済みの履歴は書き換えません。
 - Issue に関連するコミットは、メッセージの末尾に `(#番号)` を付けます。
+
+---
+
+## 5. リリース手順
+
+リリースは `develop` から `release/v<MAJOR.MINOR.PATCH>` ブランチを切り、`main` へ PR を出して行います。`main` へは**マージコミット**で取り込み、スカッシュしません。
+
+### 方針（マージコミットにする理由）
+
+- 観点ごとに分けたコミットと `(#番号)` による Issue との対応を、`main` にも残すためです。
+- スカッシュすると、`main` と `develop` の履歴がつながらず、次のリリースで前回の変更が差分に再び現れ、衝突の原因になります。マージコミットなら、この問題は起きません。
+
+### 手順
+
+1. `develop` を最新にして、`release/v<バージョン>` を切る。
+2. リリース準備のコミットを入れる（観点ごとに分ける）。
+   - `pyproject.toml`・`uv.lock`・`src/storage_kernel/__init__.py` の `__version__` を同じ値にする。
+   - `CHANGELOG.md` に、そのバージョンの節を追加する。
+   - 設計書の状態（`status`）を、`approved` に揃える（Frontmatter・改訂履歴を合わせる）。
+   - ルートの `README.md` が実態と合っていることを確認する。
+3. ローカルで品質ゲート（`DBF-ENV-001` の QG-001〜006）を通す。
+4. `release/v<バージョン>` → `main` の PR を作り、CI が通ったら、**マージコミット**でマージする。
+5. `main` に、`v<バージョン>` のタグ（注釈付き）を付けて push する。
+6. **`release/v<バージョン>` → `develop` の PR を、マージコミットで入れる**（リリース準備のコミットを `develop` へ戻すため）。
+7. マージ済みの `release/` ブランチを削除する。
+
+### タグ
+
+```bash
+git switch main && git pull --ff-only
+git tag -a v1.0.0 -m "storage_kernel v1.0.0"
+git push origin v1.0.0
+```
+
+親プロジェクトは、このタグでサブモジュールを固定します（`examples/parent_app/README.md` を参照）。
+
+### バージョンの決め方
+
+- `ports/` と `contracts/` の変更（公開契約の破壊的変更）は Major、後方互換な機能追加は Minor、不具合修正は Patch とします。
+- `core/`・`runtime/` のバグ修正と性能改善は、親プロジェクトが `git submodule update` だけで取り込める状態を保ちます。
