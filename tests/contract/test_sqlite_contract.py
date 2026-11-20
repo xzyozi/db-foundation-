@@ -9,6 +9,7 @@ from typing import Any
 import unittest
 
 from storage_kernel.contrib.sqlite import SqliteMetaDAO, SqliteShardDAO
+from storage_kernel.ports.dao import ProjectionPort
 from storage_kernel.testing import contract_test
 from storage_kernel.testing.memory_ports import (
     InMemoryProjection,
@@ -28,6 +29,10 @@ class TestSqliteContract(contract_test.StorageKernelContractTest[dict[str, Any]]
 
     def tearDown(self) -> None:
         self._tmpdir.cleanup()
+
+    def projected_seqs(self, projection: ProjectionPort[dict[str, Any]], partition_key: str) -> list[int]:
+        assert isinstance(projection, InMemoryProjection)
+        return [rec.seq for rec in projection.records_for(partition_key)]
 
     def make_dao(self) -> contract_test.DAOContractBundle[dict[str, Any]]:
         upcaster = MappingPayloadUpcaster(

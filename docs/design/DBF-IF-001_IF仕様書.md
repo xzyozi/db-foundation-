@@ -5,7 +5,7 @@ document_number: "DBF-IF-001"
 document_role: "normative"
 ssot_scope: "external_interface"
 status: "draft"
-version: "1.1"
+version: "1.2"
 created_at: "2026-11-19"
 updated_at: "2026-11-20"
 author: "xzyozi"
@@ -65,32 +65,32 @@ related_documents:
 
 #### A. 公開 API（`StorageKernel` が提供し、親プロジェクトが呼び出す）
 
-| IF-ID | インターフェース名 | 方向 | 方式 | 相手先 | 対応するDD機能ID | 状態 |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| IF-001 | `StorageKernel.append` | 提供 | インプロセス関数呼び出し（同期） | 親プロジェクト業務モジュール | `DBF-DD-001` (`F-101`) | 計画（v1） |
-| IF-002 | `StorageKernel.write_snapshot` | 提供 | インプロセス関数呼び出し（同期） | 親プロジェクト業務モジュール | `DBF-DD-001` (`F-102`) | 計画（v1） |
-| IF-003 | `StorageKernel.subscribe` | 提供 | インプロセス関数呼び出し（非同期コールバック登録） | 親プロジェクト購読モジュール | `DBF-DD-002` (`F-201`) | 計画（v1） |
-| IF-004 | `StorageKernel.register_projection` | 提供 | インプロセス関数呼び出し（非同期ワーカー登録） | 親プロジェクト Composition Root | `DBF-DD-002` (`F-202`) | 計画（v1） |
-| IF-005 | `StorageKernel.resume_projection` | 提供 | インプロセス関数呼び出し（同期） | 親プロジェクト運用・管理機能 | `DBF-DD-002` (`F-203`) | 計画（v1） |
-| IF-006 | `StorageKernel.set_partition_status` | 提供 | インプロセス関数呼び出し（同期） | 親プロジェクト運用・管理機能 | `DBF-DD-001` (`F-103`) / `DBF-DD-004` (`F-401`) | 計画（v1） |
-| IF-007 | `StorageKernel.enter_maintenance` | 提供 | インプロセス関数呼び出し（同期） | 親プロジェクト運用・バックアップ機能 | `DBF-DD-004` (`F-402`) | 計画（v1） |
-| IF-008 | `StorageKernel.exit_maintenance` | 提供 | インプロセス関数呼び出し（同期） | 親プロジェクト運用・バックアップ機能 | `DBF-DD-004` (`F-403`) | 計画（v1） |
-| IF-009 | `StorageKernel.sync` | 提供 | インプロセス関数呼び出し（同期） | 親プロジェクト同期クライアント | `DBF-DD-003` (`F-301`) | 計画（v1） |
-| IF-010 | `StorageKernel.close` | 提供 | インプロセス関数呼び出し（同期） | 親プロジェクト Lifecycle 管理 | `DBF-DD-004` (`F-404`) | 計画（v1） |
+| IF-ID  | インターフェース名                   | 方向 | 方式                                               | 相手先                               | 対応するDD機能ID                                | 状態       |
+| :----- | :----------------------------------- | :--- | :------------------------------------------------- | :----------------------------------- | :---------------------------------------------- | :--------- |
+| IF-001 | `StorageKernel.append`               | 提供 | インプロセス関数呼び出し（同期）                   | 親プロジェクト業務モジュール         | `DBF-DD-001` (`F-101`)                          | 計画（v1） |
+| IF-002 | `StorageKernel.write_snapshot`       | 提供 | インプロセス関数呼び出し（同期）                   | 親プロジェクト業務モジュール         | `DBF-DD-001` (`F-102`)                          | 計画（v1） |
+| IF-003 | `StorageKernel.subscribe`            | 提供 | インプロセス関数呼び出し（非同期コールバック登録） | 親プロジェクト購読モジュール         | `DBF-DD-002` (`F-201`)                          | 計画（v1） |
+| IF-004 | `StorageKernel.register_projection`  | 提供 | インプロセス関数呼び出し（非同期ワーカー登録）     | 親プロジェクト Composition Root      | `DBF-DD-002` (`F-202`)                          | 計画（v1） |
+| IF-005 | `StorageKernel.resume_projection`    | 提供 | インプロセス関数呼び出し（同期）                   | 親プロジェクト運用・管理機能         | `DBF-DD-002` (`F-203`)                          | 計画（v1） |
+| IF-006 | `StorageKernel.set_partition_status` | 提供 | インプロセス関数呼び出し（同期）                   | 親プロジェクト運用・管理機能         | `DBF-DD-001` (`F-103`) / `DBF-DD-004` (`F-401`) | 計画（v1） |
+| IF-007 | `StorageKernel.enter_maintenance`    | 提供 | インプロセス関数呼び出し（同期）                   | 親プロジェクト運用・バックアップ機能 | `DBF-DD-004` (`F-402`)                          | 計画（v1） |
+| IF-008 | `StorageKernel.exit_maintenance`     | 提供 | インプロセス関数呼び出し（同期）                   | 親プロジェクト運用・バックアップ機能 | `DBF-DD-004` (`F-403`)                          | 計画（v1） |
+| IF-009 | `StorageKernel.sync`                 | 提供 | インプロセス関数呼び出し（同期）                   | 親プロジェクト同期クライアント       | `DBF-DD-003` (`F-301`)                          | 計画（v1） |
+| IF-010 | `StorageKernel.close`                | 提供 | インプロセス関数呼び出し（同期）                   | 親プロジェクト Lifecycle 管理        | `DBF-DD-004` (`F-404`)                          | 計画（v1） |
 
 #### B. Port / SPI（`storage_kernel` が呼び出し、親プロジェクトが実装する）
 
-| IF-ID | インターフェース名 | 方向 | 方式 | 相手先 | 対応するDD機能ID | 状態 |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| IF-101 | `ShardDAOPort[T]` | 利用（SPI） | Protocol メソッド呼び出し | 親プロジェクト Shard DAO Adapter | `DBF-DD-001` (`F-101`, `F-102`) / `DBF-DD-002` (`F-202`) / `DBF-DD-003` (`F-301`) | 計画（v1） |
-| IF-102 | `ShardTxPort[T]` | 利用（SPI） | トランザクションコンテキスト内 Protocol 呼び出し | 親プロジェクト Shard DAO トランザクション | `DBF-DD-001` (`F-101`, `F-102`) | 計画（v1） |
-| IF-103 | `MetaDAOPort` | 利用（SPI） | Protocol メソッド呼び出し | 親プロジェクト Meta DAO Adapter | `DBF-DD-001` (`F-101`〜`F-103`) / `DBF-DD-002` (`F-202`, `F-203`) / `DBF-DD-003` (`F-301`) | 計画（v1） |
-| IF-104 | `ProjectionPort[T]` | 利用（SPI） | 非同期ワーカーからの Protocol 呼び出し | 親プロジェクト Projection Adapter | `DBF-DD-002` (`F-202`) | 計画（v1） |
-| IF-105 | `DeadLetterPort[T]` | 利用（SPI・任意） | 非同期ワーカーからの Protocol 呼び出し | 親プロジェクト DLQ Adapter | `DBF-DD-002` (`F-202`) | 計画（v1） |
-| IF-106 | `PayloadCodec[T]` | 利用（SPI） | Protocol メソッド呼び出し | 親プロジェクト Codec Adapter | `DBF-DD-001` (`F-101`, `F-102`) / `DBF-DD-003` (`F-302`) | 計画（v1） |
-| IF-107 | `PayloadUpcaster` | 利用（SPI・任意） | Protocol メソッド呼び出し | 親プロジェクト Upcaster Adapter | `DBF-DD-003` (`F-302`) | 計画（v1） |
-| IF-108 | `PartitionRouterPort` | 利用（SPI） | Protocol メソッド呼び出し | 親プロジェクト Router Adapter | `DBF-DD-001` (`F-101`, `F-102`) | 計画（v1） |
-| IF-109 | `MaintenanceHooks` | 利用（SPI・任意） | メンテナンス遷移時のフック呼び出し | 親プロジェクト Maintenance Adapter | `DBF-DD-004` (`F-402`, `F-403`) | 計画（v1） |
+| IF-ID  | インターフェース名    | 方向              | 方式                                             | 相手先                                    | 対応するDD機能ID                                                                           | 状態       |
+| :----- | :-------------------- | :---------------- | :----------------------------------------------- | :---------------------------------------- | :----------------------------------------------------------------------------------------- | :--------- |
+| IF-101 | `ShardDAOPort[T]`     | 利用（SPI）       | Protocol メソッド呼び出し                        | 親プロジェクト Shard DAO Adapter          | `DBF-DD-001` (`F-101`, `F-102`) / `DBF-DD-002` (`F-202`) / `DBF-DD-003` (`F-301`)          | 計画（v1） |
+| IF-102 | `ShardTxPort[T]`      | 利用（SPI）       | トランザクションコンテキスト内 Protocol 呼び出し | 親プロジェクト Shard DAO トランザクション | `DBF-DD-001` (`F-101`, `F-102`)                                                            | 計画（v1） |
+| IF-103 | `MetaDAOPort`         | 利用（SPI）       | Protocol メソッド呼び出し                        | 親プロジェクト Meta DAO Adapter           | `DBF-DD-001` (`F-101`〜`F-103`) / `DBF-DD-002` (`F-202`, `F-203`) / `DBF-DD-003` (`F-301`) | 計画（v1） |
+| IF-104 | `ProjectionPort[T]`   | 利用（SPI）       | 非同期ワーカーからの Protocol 呼び出し           | 親プロジェクト Projection Adapter         | `DBF-DD-002` (`F-202`)                                                                     | 計画（v1） |
+| IF-105 | `DeadLetterPort[T]`   | 利用（SPI・任意） | 非同期ワーカーからの Protocol 呼び出し           | 親プロジェクト DLQ Adapter                | `DBF-DD-002` (`F-202`)                                                                     | 計画（v1） |
+| IF-106 | `PayloadCodec[T]`     | 利用（SPI）       | Protocol メソッド呼び出し                        | 親プロジェクト Codec Adapter              | `DBF-DD-001` (`F-101`, `F-102`) / `DBF-DD-003` (`F-302`)                                   | 計画（v1） |
+| IF-107 | `PayloadUpcaster`     | 利用（SPI・任意） | Protocol メソッド呼び出し                        | 親プロジェクト Upcaster Adapter           | `DBF-DD-003` (`F-302`)                                                                     | 計画（v1） |
+| IF-108 | `PartitionRouterPort` | 利用（SPI）       | Protocol メソッド呼び出し                        | 親プロジェクト Router Adapter             | `DBF-DD-001` (`F-101`, `F-102`)                                                            | 計画（v1） |
+| IF-109 | `MaintenanceHooks`    | 利用（SPI・任意） | メンテナンス遷移時のフック呼び出し               | 親プロジェクト Maintenance Adapter        | `DBF-DD-004` (`F-402`, `F-403`)                                                            | 計画（v1） |
 
 ### 2.2 共通ルール
 
@@ -118,84 +118,84 @@ related_documents:
 
 境界を越えて共有される不変データクラス（`frozen=True`）およびハンドル Protocol のフィールド仕様を下表に定義する。
 
-| 型名 | フィールド / プロパティ | データ型 | 必須性 | NULL可 | 制約・意味 |
-| :--- | :--- | :--- | :---: | :---: | :--- |
-| `DurabilityLevel` | （リテラル型） | `Literal["none", "process_crash", "power_loss"]` | 必須 | 不可 | DAO が保証する永続化水準。既定および SQLite 参照実装は `"power_loss"`、In-Memory は `"none"` |
-| `PartitionStatus` | （リテラル型） | `Literal["active", "read_only"]` | 必須 | 不可 | パーティションの状態。v1 は2値のみ（v2 で `"migrating"` を追加予定） |
-| `DropPolicy` | （リテラル型） | `Literal["drop_newest", "drop_oldest", "disconnect"]` | 必須 | 不可 | `subscribe` の有界キュー満杯時の破棄ポリシー |
-| `ProjectionFailurePolicy` | （リテラル型） | `Literal["dlq_and_skip", "pause_partition"]` | 必須 | 不可 | Projection リトライ上限超過後（Poison Pill 特定後）の処置ポリシー |
-| `RetryPolicy` | `max_attempts` | `int` | 任意 | 不可 | 最大試行回数（既定値 `3`、`>= 1`） |
-| `RetryPolicy` | `initial_delay_sec` | `float` | 任意 | 不可 | 初回リトライ待機秒数（既定値 `0.1`、`>= 0.0`） |
-| `RetryPolicy` | `backoff_multiplier` | `float` | 任意 | 不可 | 指数バックオフ倍率（既定値 `2.0`、`>= 1.0`） |
-| `RetryPolicy` | `max_delay_sec` | `float` | 任意 | 不可 | 最大リトライ待機秒数（既定値 `5.0`、`>= initial_delay_sec`） |
-| `PartitionInfo` | `partition_key` | `str` | 必須 | 不可 | パーティション識別キー（非空文字列） |
-| `PartitionInfo` | `shard_id` | `str` | 必須 | 不可 | 割り当てられたシャード識別子（v1 では一度確定したら不変） |
-| `PartitionInfo` | `status` | `PartitionStatus` | 必須 | 不可 | `"active"` または `"read_only"` |
-| `PartitionInfo` | `created_at` | `float` | 必須 | 不可 | バインド登録日時（UTC エポック秒） |
-| `RecordEnvelope[T]` | `partition_key` | `str` | 必須 | 不可 | パーティション識別キー |
-| `RecordEnvelope[T]` | `seq` | `int` | 必須 | 不可 | パーティション内の単調増加連番（`>= 1`、欠番なし） |
-| `RecordEnvelope[T]` | `idempotency_key` | `str` | 必須 | 不可 | 呼び出し元指定の冪等キー |
-| `RecordEnvelope[T]` | `record_type` | `str` | 必須 | 不可 | レコード種別（スナップショット時は `"__snapshot__"`） |
-| `RecordEnvelope[T]` | `schema_version` | `int` | 必須 | 不可 | ペイロードのスキーマ版番号（`>= 1`） |
-| `RecordEnvelope[T]` | `payload_hash` | `str` | 必須 | 不可 | 保存時の元データ（`record_type`, `schema_version`, エンコード後バイト列）から算出した SHA-256 16進文字列。Upcast 後も再計算しない |
-| `RecordEnvelope[T]` | `payload` | `T` | 必須 | 可 | ドメインペイロード本体 |
-| `RecordEnvelope[T]` | `created_at` | `float` | 必須 | 不可 | レコード作成日時（UTC エポック秒） |
-| `RecordEnvelope[T]` | `covers_through_seq` | `int \| None` | 任意 | 可 | `record_type == "__snapshot__"` のときのみ必須（`1 <= covers_through_seq <= 最新seq`）。通常レコードでは `None` |
-| `KernelConfig` | `schema_registry` | `dict[str, int]` | 必須 | 不可 | `record_type` ごとの最新 `schema_version` マップ |
-| `KernelConfig` | `max_payload_bytes` | `int` | 任意 | 不可 | エンコード後ペイロードの最大バイト数（既定値 `65536` = 64 KB） |
-| `KernelConfig` | `default_retry_policy` | `RetryPolicy` | 任意 | 不可 | Projection の既定リトライポリシー（既定値 `RetryPolicy()`） |
-| `WriteAck[T]` | `status` | `Literal["committed", "duplicate"]` | 必須 | 不可 | 新規書き込み確定時は `"committed"`、冪等再送ヒット時は `"duplicate"` |
-| `WriteAck[T]` | `shard_id` | `str` | 必須 | 不可 | 保存先シャード識別子 |
-| `WriteAck[T]` | `envelope` | `RecordEnvelope[T]` | 必須 | 不可 | 確定または既存ヒットしたレコード封筒 |
-| `DeadLetterRecord[T]` | `consumer_id` | `str` | 必須 | 不可 | 失敗した Projection の `consumer_id` |
-| `DeadLetterRecord[T]` | `envelope` | `RecordEnvelope[T]` | 必須 | 不可 | 隔離された原因レコード（Poison Pill） |
-| `DeadLetterRecord[T]` | `error_type` | `str` | 必須 | 不可 | 発生した例外のクラス名 |
-| `DeadLetterRecord[T]` | `error_message` | `str` | 必須 | 不可 | 例外メッセージ文字列 |
-| `DeadLetterRecord[T]` | `attempts` | `int` | 必須 | 不可 | 実行した試行回数 |
-| `DeadLetterRecord[T]` | `failed_at` | `float` | 必須 | 不可 | DLQ 隔離確定日時（UTC エポック秒） |
-| `ShutdownReport` | `completed_cleanly` | `bool` | 必須 | 不可 | タイムアウト内に全指定ドレインが完了した場合 `True` |
-| `ShutdownReport` | `dropped_subscriber_events` | `int` | 必須 | 不可 | 停止時に破棄された `subscribe` キュー内イベント総数 |
-| `ShutdownReport` | `pending_projection_partitions` | `tuple[str, ...]` | 必須 | 不可 | 停止時点で未反映差分が残っているパーティションキーのタプル |
-| `ShutdownReport` | `elapsed_sec` | `float` | 必須 | 不可 | `close()` 処理に要した経過秒数 |
-| `SubscriptionHandle` | `subscription_id` | `str` | 必須 | 不可 | 購読識別子（読み取り専用プロパティ） |
-| `SubscriptionHandle` | `is_active` | `bool` | 必須 | 不可 | 購読が有効な間 `True`、`unsubscribe()` または `disconnect` 後は `False` |
-| `SubscriptionHandle` | `dropped_count` | `int` | 必須 | 不可 | キュー満杯により破棄された累積イベント件数 |
-| `SubscriptionHandle` | `unsubscribe()` | `None` | 必須 | - | 購読を解除し、以降の新規イベント投入を停止するメソッド（冪等） |
+| 型名                      | フィールド / プロパティ         | データ型                                              | 必須性 | NULL可 | 制約・意味                                                                                                                        |
+| :------------------------ | :------------------------------ | :---------------------------------------------------- | :----: | :----: | :-------------------------------------------------------------------------------------------------------------------------------- |
+| `DurabilityLevel`         | （リテラル型）                  | `Literal["none", "process_crash", "power_loss"]`      |  必須  |  不可  | DAO が保証する永続化水準。既定および SQLite 参照実装は `"power_loss"`、In-Memory は `"none"`                                      |
+| `PartitionStatus`         | （リテラル型）                  | `Literal["active", "read_only"]`                      |  必須  |  不可  | パーティションの状態。v1 は2値のみ（v2 で `"migrating"` を追加予定）                                                              |
+| `DropPolicy`              | （リテラル型）                  | `Literal["drop_newest", "drop_oldest", "disconnect"]` |  必須  |  不可  | `subscribe` の有界キュー満杯時の破棄ポリシー                                                                                      |
+| `ProjectionFailurePolicy` | （リテラル型）                  | `Literal["dlq_and_skip", "pause_partition"]`          |  必須  |  不可  | Projection リトライ上限超過後（Poison Pill 特定後）の処置ポリシー                                                                 |
+| `RetryPolicy`             | `max_attempts`                  | `int`                                                 |  任意  |  不可  | 最大試行回数（既定値 `3`、`>= 1`）                                                                                                |
+| `RetryPolicy`             | `initial_delay_sec`             | `float`                                               |  任意  |  不可  | 初回リトライ待機秒数（既定値 `0.1`、`>= 0.0`）                                                                                    |
+| `RetryPolicy`             | `backoff_multiplier`            | `float`                                               |  任意  |  不可  | 指数バックオフ倍率（既定値 `2.0`、`>= 1.0`）                                                                                      |
+| `RetryPolicy`             | `max_delay_sec`                 | `float`                                               |  任意  |  不可  | 最大リトライ待機秒数（既定値 `5.0`、`>= initial_delay_sec`）                                                                      |
+| `PartitionInfo`           | `partition_key`                 | `str`                                                 |  必須  |  不可  | パーティション識別キー（非空文字列）                                                                                              |
+| `PartitionInfo`           | `shard_id`                      | `str`                                                 |  必須  |  不可  | 割り当てられたシャード識別子（v1 では一度確定したら不変）                                                                         |
+| `PartitionInfo`           | `status`                        | `PartitionStatus`                                     |  必須  |  不可  | `"active"` または `"read_only"`                                                                                                   |
+| `PartitionInfo`           | `created_at`                    | `float`                                               |  必須  |  不可  | バインド登録日時（UTC エポック秒）                                                                                                |
+| `RecordEnvelope[T]`       | `partition_key`                 | `str`                                                 |  必須  |  不可  | パーティション識別キー                                                                                                            |
+| `RecordEnvelope[T]`       | `seq`                           | `int`                                                 |  必須  |  不可  | パーティション内の単調増加連番（`>= 1`、欠番なし）                                                                                |
+| `RecordEnvelope[T]`       | `idempotency_key`               | `str`                                                 |  必須  |  不可  | 呼び出し元指定の冪等キー                                                                                                          |
+| `RecordEnvelope[T]`       | `record_type`                   | `str`                                                 |  必須  |  不可  | レコード種別（スナップショット時は `"__snapshot__"`）                                                                             |
+| `RecordEnvelope[T]`       | `schema_version`                | `int`                                                 |  必須  |  不可  | ペイロードのスキーマ版番号（`>= 1`）                                                                                              |
+| `RecordEnvelope[T]`       | `payload_hash`                  | `str`                                                 |  必須  |  不可  | 保存時の元データ（`record_type`, `schema_version`, エンコード後バイト列）から算出した SHA-256 16進文字列。Upcast 後も再計算しない |
+| `RecordEnvelope[T]`       | `payload`                       | `T`                                                   |  必須  |   可   | ドメインペイロード本体                                                                                                            |
+| `RecordEnvelope[T]`       | `created_at`                    | `float`                                               |  必須  |  不可  | レコード作成日時（UTC エポック秒）                                                                                                |
+| `RecordEnvelope[T]`       | `covers_through_seq`            | `int \| None`                                         |  任意  |   可   | `record_type == "__snapshot__"` のときのみ必須（`1 <= covers_through_seq <= 最新seq`）。通常レコードでは `None`                   |
+| `KernelConfig`            | `schema_registry`               | `dict[str, int]`                                      |  必須  |  不可  | `record_type` ごとの最新 `schema_version` マップ                                                                                  |
+| `KernelConfig`            | `max_payload_bytes`             | `int`                                                 |  任意  |  不可  | エンコード後ペイロードの最大バイト数（既定値 `65536` = 64 KB）                                                                    |
+| `KernelConfig`            | `default_retry_policy`          | `RetryPolicy`                                         |  任意  |  不可  | Projection の既定リトライポリシー（既定値 `RetryPolicy()`）                                                                       |
+| `WriteAck[T]`             | `status`                        | `Literal["committed", "duplicate"]`                   |  必須  |  不可  | 新規書き込み確定時は `"committed"`、冪等再送ヒット時は `"duplicate"`                                                              |
+| `WriteAck[T]`             | `shard_id`                      | `str`                                                 |  必須  |  不可  | 保存先シャード識別子                                                                                                              |
+| `WriteAck[T]`             | `envelope`                      | `RecordEnvelope[T]`                                   |  必須  |  不可  | 確定または既存ヒットしたレコード封筒                                                                                              |
+| `DeadLetterRecord[T]`     | `consumer_id`                   | `str`                                                 |  必須  |  不可  | 失敗した Projection の `consumer_id`                                                                                              |
+| `DeadLetterRecord[T]`     | `envelope`                      | `RecordEnvelope[T]`                                   |  必須  |  不可  | 隔離された原因レコード（Poison Pill）                                                                                             |
+| `DeadLetterRecord[T]`     | `error_type`                    | `str`                                                 |  必須  |  不可  | 発生した例外のクラス名                                                                                                            |
+| `DeadLetterRecord[T]`     | `error_message`                 | `str`                                                 |  必須  |  不可  | 例外メッセージ文字列                                                                                                              |
+| `DeadLetterRecord[T]`     | `attempts`                      | `int`                                                 |  必須  |  不可  | 実行した試行回数                                                                                                                  |
+| `DeadLetterRecord[T]`     | `failed_at`                     | `float`                                               |  必須  |  不可  | DLQ 隔離確定日時（UTC エポック秒）                                                                                                |
+| `ShutdownReport`          | `completed_cleanly`             | `bool`                                                |  必須  |  不可  | タイムアウト内に全指定ドレインが完了した場合 `True`                                                                               |
+| `ShutdownReport`          | `dropped_subscriber_events`     | `int`                                                 |  必須  |  不可  | 停止時に破棄された `subscribe` キュー内イベント総数                                                                               |
+| `ShutdownReport`          | `pending_projection_partitions` | `tuple[str, ...]`                                     |  必須  |  不可  | 停止時点で未反映差分が残っているパーティションキーのタプル                                                                        |
+| `ShutdownReport`          | `elapsed_sec`                   | `float`                                               |  必須  |  不可  | `close()` 処理に要した経過秒数                                                                                                    |
+| `SubscriptionHandle`      | `subscription_id`               | `str`                                                 |  必須  |  不可  | 購読識別子（読み取り専用プロパティ）                                                                                              |
+| `SubscriptionHandle`      | `is_active`                     | `bool`                                                |  必須  |  不可  | 購読が有効な間 `True`、`unsubscribe()` または `disconnect` 後は `False`                                                           |
+| `SubscriptionHandle`      | `dropped_count`                 | `int`                                                 |  必須  |  不可  | キュー満杯により破棄された累積イベント件数                                                                                        |
+| `SubscriptionHandle`      | `unsubscribe()`                 | `None`                                                |  必須  |   -    | 購読を解除し、以降の新規イベント投入を停止するメソッド（冪等）                                                                    |
 
 ### 2.4 標準例外体系（`contracts/errors.py`）
 
 すべての基盤標準例外は `StorageKernelError(Exception)` を継承する。
 
-| 例外クラス名 | 保持属性 | 発生条件 | 再試行可否 |
-| :--- | :--- | :--- | :--- |
-| `StorageKernelError` | `args` | `storage_kernel` が送出する全標準例外の基底クラス | 子クラスによる |
-| `KernelClosedError` | なし | `close()` 開始後に書き込み（`append`, `write_snapshot`）や状態変更が呼ばれた場合 | 不可（再起動が必要） |
-| `KernelMaintenanceError` | なし | メンテナンスモード（`enter_maintenance`〜`exit_maintenance`）中に書き込み、パーティション作成、状態変更、カーソル更新が呼ばれた場合 | 条件付き（`exit_maintenance` 後に再試行可） |
-| `PayloadTooLarge` | `size: int`, `limit: int` | `PayloadCodec.encode(payload)` のバイト長 `size` が `limit`（既定 64 KB）を超えた場合 | 不可（ペイロード縮小が必要） |
-| `ReservedRecordTypeError` | なし | 通常の `append()` に `"__"` で始まる予約 `record_type`（例: `"__snapshot__"`）を渡した場合 | 不可（`write_snapshot` を使うか名称変更） |
-| `DuplicateKeyError` | `kind: Literal["sequence", "idempotency_key", "unknown"]` | `ShardTxPort.insert_record` で `(partition_key, seq)` または `(partition_key, idempotency_key)` の一意制約違反が発生した際に DAO が変換して送出する例外 | 条件付き（`idempotency_key` 競合時は基盤内部で再照会・ハンドリング） |
-| `IdempotencyConflict` | `partition_key: str`, `idempotency_key: str`, `existing_hash: str`, `incoming_hash: str` | 同じ `(partition_key, idempotency_key)` の既存レコードと `payload_hash` が一致しない場合 | 不可（新しい `idempotency_key` の採番が必要） |
-| `PartitionReadOnlyError` | なし | `status == "read_only"` のパーティションに対して `append` または `write_snapshot` を呼んだ場合 | 条件付き（`"active"` へ戻した後にのみ可） |
-| `PartitionStateConflictError` | なし | `set_partition_status` の `expected_status` が現在の状態と一致しない場合 | 条件付き（最新状態を確認して再実行） |
-| `CursorExpiredError` | `partition_key: str`, `cursor_seq: int`, `oldest_retained_seq: int` | 保持範囲より古いカーソルで `sync` / `fetch_range` を呼んだ場合（※v1 では Retention を行わないため送出されない。v2 互換のため契約のみ先行定義） | 条件付き（最新の `__snapshot__` から再開する） |
-| `SchemaVersionError` | なし | 書き込み時に `schema_registry` の最新版と一致しない、または読み取り時に未知の新しい `schema_version` や Upcast 変換経路の欠落を検出した場合 | 不可（`schema_registry` または `PayloadUpcaster` の修正が必要） |
+| 例外クラス名                  | 保持属性                                                                                 | 発生条件                                                                                                                                                | 再試行可否                                                           |
+| :---------------------------- | :--------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------- |
+| `StorageKernelError`          | `args`                                                                                   | `storage_kernel` が送出する全標準例外の基底クラス                                                                                                       | 子クラスによる                                                       |
+| `KernelClosedError`           | なし                                                                                     | `close()` 開始後に書き込み（`append`, `write_snapshot`）や状態変更が呼ばれた場合                                                                        | 不可（再起動が必要）                                                 |
+| `KernelMaintenanceError`      | なし                                                                                     | メンテナンスモード（`enter_maintenance`〜`exit_maintenance`）中に書き込み、パーティション作成、状態変更、カーソル更新が呼ばれた場合                     | 条件付き（`exit_maintenance` 後に再試行可）                          |
+| `PayloadTooLarge`             | `size: int`, `limit: int`                                                                | `PayloadCodec.encode(payload)` のバイト長 `size` が `limit`（既定 64 KB）を超えた場合                                                                   | 不可（ペイロード縮小が必要）                                         |
+| `ReservedRecordTypeError`     | なし                                                                                     | 通常の `append()` に `"__"` で始まる予約 `record_type`（例: `"__snapshot__"`）を渡した場合                                                              | 不可（`write_snapshot` を使うか名称変更）                            |
+| `DuplicateKeyError`           | `kind: Literal["sequence", "idempotency_key", "unknown"]`                                | `ShardTxPort.insert_record` で `(partition_key, seq)` または `(partition_key, idempotency_key)` の一意制約違反が発生した際に DAO が変換して送出する例外 | 条件付き（`idempotency_key` 競合時は基盤内部で再照会・ハンドリング） |
+| `IdempotencyConflict`         | `partition_key: str`, `idempotency_key: str`, `existing_hash: str`, `incoming_hash: str` | 同じ `(partition_key, idempotency_key)` の既存レコードと `payload_hash` が一致しない場合                                                                | 不可（新しい `idempotency_key` の採番が必要）                        |
+| `PartitionReadOnlyError`      | なし                                                                                     | `status == "read_only"` のパーティションに対して `append` または `write_snapshot` を呼んだ場合                                                          | 条件付き（`"active"` へ戻した後にのみ可）                            |
+| `PartitionStateConflictError` | なし                                                                                     | `set_partition_status` の `expected_status` が現在の状態と一致しない場合                                                                                | 条件付き（最新状態を確認して再実行）                                 |
+| `CursorExpiredError`          | `partition_key: str`, `cursor_seq: int`, `oldest_retained_seq: int`                      | 保持範囲より古いカーソルで `sync` / `fetch_range` を呼んだ場合（※v1 では Retention を行わないため送出されない。v2 互換のため契約のみ先行定義）          | 条件付き（最新の `__snapshot__` から再開する）                       |
+| `SchemaVersionError`          | なし                                                                                     | 書き込み時に `schema_registry` の最新版と一致しない、または読み取り時に未知の新しい `schema_version` や Upcast 変換経路の欠落を検出した場合             | 不可（`schema_registry` または `PayloadUpcaster` の修正が必要）      |
 
 ### 2.5 コンストラクタ引数（`StorageKernel(...)`）
 
 `StorageKernel` は、すべてキーワード専用引数で組み立てる（`Composition Root` が DAO などを注入する）。
 
-| 引数 | データ型 | 必須性 | 既定値 | 用途 |
-| :--- | :--- | :---: | :--- | :--- |
-| `config` | `KernelConfig` | 必須 | なし | `schema_registry`、`max_payload_bytes`、`default_retry_policy` を保持する設定 |
-| `shard_dao` | `ShardDAOPort[Any]` | 必須 | なし | シャード DB へのレコード永続化 |
-| `meta_dao` | `MetaDAOPort` | 必須 | なし | パーティション台帳・カーソルの永続化 |
-| `codec` | `PayloadCodec[T]` | 必須 | なし | ペイロードと `bytes` の相互変換 |
-| `router` | `PartitionRouterPort` | 必須 | なし | `partition_key` からシャードへのルーティング |
-| `upcaster` | `PayloadUpcaster \| None` | 任意 | `None` | 旧版レコードの読み取り時 Upcast |
-| `dead_letter_port` | `DeadLetterPort[T] \| None` | 任意 | `None` | Poison Pill の DLQ 隔離（`failure_policy="dlq_and_skip"` の前提） |
-| `maintenance_hooks` | `MaintenanceHooks \| None` | 任意 | `None` | メンテナンス移行・解除のフック |
-| `telemetry_sink` | `TelemetrySink \| None` | 任意 | `None` | テレメトリの出力先 |
-| `store_raw_bytes` | `bool` | 任意 | `False` | `True` のとき、`codec.encode` 後の `bytes` を `ShardDAOPort` へ保存し（`RecordEnvelope.payload` に `bytes` が入る）、読み出し時に `codec.decode` で `T` へ戻す。`False` のときは `T` のオブジェクトをそのまま `ShardDAOPort` へ渡す |
+| 引数                | データ型                    | 必須性 | 既定値  | 用途                                                                                                                                                                                                                                |
+| :------------------ | :-------------------------- | :----: | :------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config`            | `KernelConfig`              |  必須  | なし    | `schema_registry`、`max_payload_bytes`、`default_retry_policy` を保持する設定                                                                                                                                                       |
+| `shard_dao`         | `ShardDAOPort[Any]`         |  必須  | なし    | シャード DB へのレコード永続化                                                                                                                                                                                                      |
+| `meta_dao`          | `MetaDAOPort`               |  必須  | なし    | パーティション台帳・カーソルの永続化                                                                                                                                                                                                |
+| `codec`             | `PayloadCodec[T]`           |  必須  | なし    | ペイロードと `bytes` の相互変換                                                                                                                                                                                                     |
+| `router`            | `PartitionRouterPort`       |  必須  | なし    | `partition_key` からシャードへのルーティング                                                                                                                                                                                        |
+| `upcaster`          | `PayloadUpcaster \| None`   |  任意  | `None`  | 旧版レコードの読み取り時 Upcast                                                                                                                                                                                                     |
+| `dead_letter_port`  | `DeadLetterPort[T] \| None` |  任意  | `None`  | Poison Pill の DLQ 隔離（`failure_policy="dlq_and_skip"` の前提）                                                                                                                                                                   |
+| `maintenance_hooks` | `MaintenanceHooks \| None`  |  任意  | `None`  | メンテナンス移行・解除のフック                                                                                                                                                                                                      |
+| `telemetry_sink`    | `TelemetrySink \| None`     |  任意  | `None`  | テレメトリの出力先                                                                                                                                                                                                                  |
+| `store_raw_bytes`   | `bool`                      |  任意  | `False` | `True` のとき、`codec.encode` 後の `bytes` を `ShardDAOPort` へ保存し（`RecordEnvelope.payload` に `bytes` が入る）、読み出し時に `codec.decode` で `T` へ戻す。`False` のときは `T` のオブジェクトをそのまま `ShardDAOPort` へ渡す |
 
 `store_raw_bytes=True` は、ペイロードを `bytes` として保存する DAO（例: `codec=None` で組み立てた SQLite シャード DAO のように、自前でシリアライズせずに `bytes` を BLOB 列へ書く実装）と組み合わせる。DAO がオブジェクトを自分で直列化できる場合は `False`（既定）のままでよい。保存形式と DAO の型が食い違うと読み出し時にデコードできないため、`Composition Root` で DAO と同時に決める。
 
@@ -203,12 +203,12 @@ related_documents:
 
 ## 3. 認証・認可
 
-| 項目 | 内容 |
-| :--- | :--- |
-| 認証方式 | なし（同一プロセス内の Python メソッド呼び出しのため。外部クライアント認証は親プロジェクトの境界で実施する） |
+| 項目             | 内容                                                                                                                                                                                                                                                                                           |
+| :--------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 認証方式         | なし（同一プロセス内の Python メソッド呼び出しのため。外部クライアント認証は親プロジェクトの境界で実施する）                                                                                                                                                                                   |
 | 認可（権限）単位 | v1 ではカーネル内の ACL・名前空間制限（`ports/guard.py`）は対象外とする（[`ADR-005`](../adr/ADR-005_v1スコープの限定と将来拡張に向けた前方互換契約の先行定義.md)）。予約種別（`"__"` 始まり）の書き込み禁止とパーティション状態（`read_only`）・メンテナンスモードによる操作制限のみを強制する |
-| 資格情報の管理 | カーネル自身は DB 接続文字列やパスワードを保持・関知しない。親プロジェクトの `bootstrap.py` が DAO インスタンスを生成して注入する |
-| 権限不足時の応答 | 予約種別違反時は `ReservedRecordTypeError`、読み取り専用パーティションへの書き込み時は `PartitionReadOnlyError`、メンテナンス中の更新時は `KernelMaintenanceError` を送出する |
+| 資格情報の管理   | カーネル自身は DB 接続文字列やパスワードを保持・関知しない。親プロジェクトの `bootstrap.py` が DAO インスタンスを生成して注入する                                                                                                                                                              |
+| 権限不足時の応答 | 予約種別違反時は `ReservedRecordTypeError`、読み取り専用パーティションへの書き込み時は `PartitionReadOnlyError`、メンテナンス中の更新時は `KernelMaintenanceError` を送出する                                                                                                                  |
 
 ---
 
@@ -225,32 +225,32 @@ related_documents:
 
 #### 4.1.1 リクエスト / 引数
 
-| パラメータ | データ型 | 必須性 | NULL可 | バリデーション・制約 | 例・備考 |
-| :--- | :--- | :---: | :---: | :--- | :--- |
-| `partition_key` | `str` | 必須 | 不可 | 非空文字列 | `"order:usdjpy"` |
-| `record_type` | `str` | 必須 | 不可 | 非空文字列。`"__"` で始まらないこと。`schema_registry` に登録済みであること | `"tick_signal"` |
-| `payload` | `T` | 必須 | 可 | `PayloadCodec.encode(payload)` 後のサイズが `max_payload_bytes`（64 KB）以下であること | ドメインオブジェクトまたは dict |
-| `idempotency_key` | `str` | 必須 | 不可 | 非空文字列（UUID 等） | `"550e8400-e29b-41d4-a716-446655440000"` |
-| `schema_version` | `int` | 必須（キーワード専用） | 不可 | `KernelConfig.schema_registry[record_type]` と一致する正の整数 | `1` |
-| `preferred_shard` | `str \| None` | 任意（キーワード専用） | 可 | 未登録パーティションの初回 `bind_shard` 時にのみ `PartitionRouterPort.select_shard` へ渡すヒント | `"shard_heavy"`（既定値 `None`） |
+| パラメータ        | データ型      |         必須性         | NULL可 | バリデーション・制約                                                                             | 例・備考                                 |
+| :---------------- | :------------ | :--------------------: | :----: | :----------------------------------------------------------------------------------------------- | :--------------------------------------- |
+| `partition_key`   | `str`         |          必須          |  不可  | 非空文字列                                                                                       | `"order:usdjpy"`                         |
+| `record_type`     | `str`         |          必須          |  不可  | 非空文字列。`"__"` で始まらないこと。`schema_registry` に登録済みであること                      | `"tick_signal"`                          |
+| `payload`         | `T`           |          必須          |   可   | `PayloadCodec.encode(payload)` 後のサイズが `max_payload_bytes`（64 KB）以下であること           | ドメインオブジェクトまたは dict          |
+| `idempotency_key` | `str`         |          必須          |  不可  | 非空文字列（UUID 等）                                                                            | `"550e8400-e29b-41d4-a716-446655440000"` |
+| `schema_version`  | `int`         | 必須（キーワード専用） |  不可  | `KernelConfig.schema_registry[record_type]` と一致する正の整数                                   | `1`                                      |
+| `preferred_shard` | `str \| None` | 任意（キーワード専用） |   可   | 未登録パーティションの初回 `bind_shard` 時にのみ `PartitionRouterPort.select_shard` へ渡すヒント | `"shard_heavy"`（既定値 `None`）         |
 
 #### 4.1.2 レスポンス / 戻り値
 
-| フィールド | データ型 | 必須性 | NULL可 | 意味・取り得る値 |
-| :--- | :--- | :---: | :---: | :--- |
-| （戻り値全体） | `WriteAck[T]` | 必須 | 不可 | `status`（`"committed"` または `"duplicate"`）、`shard_id`、`envelope`（`covers_through_seq=None`）を保持する |
+| フィールド     | データ型      | 必須性 | NULL可 | 意味・取り得る値                                                                                              |
+| :------------- | :------------ | :----: | :----: | :------------------------------------------------------------------------------------------------------------ |
+| （戻り値全体） | `WriteAck[T]` |  必須  |  不可  | `status`（`"committed"` または `"duplicate"`）、`shard_id`、`envelope`（`covers_through_seq=None`）を保持する |
 
 #### 4.1.3 エラー応答
 
-| エラーコード / 例外型 | 発生条件 | 応答形式 | 呼び出し側の対応 | 再試行可否 |
-| :--- | :--- | :--- | :--- | :--- |
-| `KernelClosedError` | `close()` 開始後に呼び出された | 例外送出 | 書き込みを中止する | 不可 |
-| `KernelMaintenanceError` | メンテナンスモード中に呼び出された | 例外送出 | `exit_maintenance()` 完了を待って同じ `idempotency_key` で再試行する | 条件付き |
-| `ReservedRecordTypeError` | `record_type` が `"__"` で始まる | 例外送出 | `write_snapshot` を使うか `record_type` を修正する | 不可 |
-| `SchemaVersionError` | `record_type` が未登録、または `schema_version` が最新版と不一致 | 例外送出 | `schema_registry` または送信側の版番号を揃える | 不可 |
-| `PayloadTooLarge` | エンコード後バイト数が `max_payload_bytes`（64 KB）を超過 | 例外送出 | ペイロードを分割または縮小する | 不可 |
-| `PartitionReadOnlyError` | 対象パーティションの `status` が `"read_only"` | 例外送出 | 書き込み不可として処理するか、`set_partition_status` で `"active"` に戻す | 条件付き |
-| `IdempotencyConflict` | 同じ `(partition_key, idempotency_key)` で `payload_hash` が既存レコードと異なる | 例外送出 | 冪等キーの使い回しバグを修正し、新規 `idempotency_key` を発行する | 不可 |
+| エラーコード / 例外型     | 発生条件                                                                         | 応答形式 | 呼び出し側の対応                                                          | 再試行可否 |
+| :------------------------ | :------------------------------------------------------------------------------- | :------- | :------------------------------------------------------------------------ | :--------- |
+| `KernelClosedError`       | `close()` 開始後に呼び出された                                                   | 例外送出 | 書き込みを中止する                                                        | 不可       |
+| `KernelMaintenanceError`  | メンテナンスモード中に呼び出された                                               | 例外送出 | `exit_maintenance()` 完了を待って同じ `idempotency_key` で再試行する      | 条件付き   |
+| `ReservedRecordTypeError` | `record_type` が `"__"` で始まる                                                 | 例外送出 | `write_snapshot` を使うか `record_type` を修正する                        | 不可       |
+| `SchemaVersionError`      | `record_type` が未登録、または `schema_version` が最新版と不一致                 | 例外送出 | `schema_registry` または送信側の版番号を揃える                            | 不可       |
+| `PayloadTooLarge`         | エンコード後バイト数が `max_payload_bytes`（64 KB）を超過                        | 例外送出 | ペイロードを分割または縮小する                                            | 不可       |
+| `PartitionReadOnlyError`  | 対象パーティションの `status` が `"read_only"`                                   | 例外送出 | 書き込み不可として処理するか、`set_partition_status` で `"active"` に戻す | 条件付き   |
+| `IdempotencyConflict`     | 同じ `(partition_key, idempotency_key)` で `payload_hash` が既存レコードと異なる | 例外送出 | 冪等キーの使い回しバグを修正し、新規 `idempotency_key` を発行する         | 不可       |
 
 ---
 
@@ -265,26 +265,26 @@ related_documents:
 
 #### 4.2.1 リクエスト / 引数
 
-| パラメータ | データ型 | 必須性 | NULL可 | バリデーション・制約 | 例・備考 |
-| :--- | :--- | :---: | :---: | :--- | :--- |
-| `partition_key` | `str` | 必須 | 不可 | 非空文字列（既に1件以上のレコードが存在するパーティション） | `"order:usdjpy"` |
-| `payload` | `T` | 必須 | 可 | エンコード後 64 KB 以下 | スナップショットデータ |
-| `idempotency_key` | `str` | 必須 | 不可 | 非空文字列 | `"snap-order-usdjpy-1000"` |
-| `covers_through_seq` | `int` | 必須（キーワード専用） | 不可 | `1 <= covers_through_seq <= 現在の最終 seq` | `1000` |
-| `schema_version` | `int` | 必須（キーワード専用） | 不可 | `schema_registry["__snapshot__"]` の最新版と一致する正の整数 | `1` |
+| パラメータ           | データ型 |         必須性         | NULL可 | バリデーション・制約                                         | 例・備考                   |
+| :------------------- | :------- | :--------------------: | :----: | :----------------------------------------------------------- | :------------------------- |
+| `partition_key`      | `str`    |          必須          |  不可  | 非空文字列（既に1件以上のレコードが存在するパーティション）  | `"order:usdjpy"`           |
+| `payload`            | `T`      |          必須          |   可   | エンコード後 64 KB 以下                                      | スナップショットデータ     |
+| `idempotency_key`    | `str`    |          必須          |  不可  | 非空文字列                                                   | `"snap-order-usdjpy-1000"` |
+| `covers_through_seq` | `int`    | 必須（キーワード専用） |  不可  | `1 <= covers_through_seq <= 現在の最終 seq`                  | `1000`                     |
+| `schema_version`     | `int`    | 必須（キーワード専用） |  不可  | `schema_registry["__snapshot__"]` の最新版と一致する正の整数 | `1`                        |
 
 #### 4.2.2 レスポンス / 戻り値
 
-| フィールド | データ型 | 必須性 | NULL可 | 意味・取り得る値 |
-| :--- | :--- | :---: | :---: | :--- |
-| （戻り値全体） | `WriteAck[T]` | 必須 | 不可 | `envelope.record_type == "__snapshot__"` かつ `envelope.covers_through_seq == covers_through_seq` の `WriteAck[T]` |
+| フィールド     | データ型      | 必須性 | NULL可 | 意味・取り得る値                                                                                                   |
+| :------------- | :------------ | :----: | :----: | :----------------------------------------------------------------------------------------------------------------- |
+| （戻り値全体） | `WriteAck[T]` |  必須  |  不可  | `envelope.record_type == "__snapshot__"` かつ `envelope.covers_through_seq == covers_through_seq` の `WriteAck[T]` |
 
 #### 4.2.3 エラー応答
 
-| エラーコード / 例外型 | 発生条件 | 応答形式 | 呼び出し側の対応 | 再試行可否 |
-| :--- | :--- | :--- | :--- | :--- |
-| `ValueError` | `covers_through_seq < 1` または現在の最終 `seq` を超えている場合 | 例外送出 | 確定済みの `seq` 以下の値を指定する | 不可 |
-| `KernelClosedError` / `KernelMaintenanceError` / `SchemaVersionError` / `PayloadTooLarge` / `PartitionReadOnlyError` / `IdempotencyConflict` | `IF-001`（`append`）と同一条件 | 例外送出 | `IF-001` と同じ | `IF-001` と同じ |
+| エラーコード / 例外型                                                                                                                        | 発生条件                                                         | 応答形式 | 呼び出し側の対応                    | 再試行可否      |
+| :------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------- | :------- | :---------------------------------- | :-------------- |
+| `ValueError`                                                                                                                                 | `covers_through_seq < 1` または現在の最終 `seq` を超えている場合 | 例外送出 | 確定済みの `seq` 以下の値を指定する | 不可            |
+| `KernelClosedError` / `KernelMaintenanceError` / `SchemaVersionError` / `PayloadTooLarge` / `PartitionReadOnlyError` / `IdempotencyConflict` | `IF-001`（`append`）と同一条件                                   | 例外送出 | `IF-001` と同じ                     | `IF-001` と同じ |
 
 ---
 
@@ -300,26 +300,26 @@ related_documents:
 
 #### 4.3.1 リクエスト / 引数
 
-| パラメータ | データ型 | 必須性 | NULL可 | バリデーション・制約 | 例・備考 |
-| :--- | :--- | :---: | :---: | :--- | :--- |
-| `pattern` | `str` | 必須 | 不可 | 完全一致、`*`、または末尾ワイルドカード（例: `"chat:*"`） | `"order:*"` |
-| `callback` | `Callable[[RecordEnvelope[T]], None]` | 必須 | 不可 | 1レコードを受け取る関数 | 購読ハンドラ |
-| `max_queue_size` | `int` | 任意（キーワード専用） | 不可 | `>= 1`（既定値 `256`） | `256` |
-| `drop_policy` | `DropPolicy` | 任意（キーワード専用） | 不可 | `"drop_newest"`（既定）、`"drop_oldest"`、`"disconnect"` のいずれか | `"drop_newest"` |
-| `on_error` | `Callable[[RecordEnvelope[T], Exception], None] \| None` | 任意（キーワード専用） | 可 | `callback` が例外を送出した際に呼ばれるエラーハンドラ（既定値 `None`） | `None` |
+| パラメータ       | データ型                                                 |         必須性         | NULL可 | バリデーション・制約                                                   | 例・備考        |
+| :--------------- | :------------------------------------------------------- | :--------------------: | :----: | :--------------------------------------------------------------------- | :-------------- |
+| `pattern`        | `str`                                                    |          必須          |  不可  | 完全一致、`*`、または末尾ワイルドカード（例: `"chat:*"`）              | `"order:*"`     |
+| `callback`       | `Callable[[RecordEnvelope[T]], None]`                    |          必須          |  不可  | 1レコードを受け取る関数                                                | 購読ハンドラ    |
+| `max_queue_size` | `int`                                                    | 任意（キーワード専用） |  不可  | `>= 1`（既定値 `256`）                                                 | `256`           |
+| `drop_policy`    | `DropPolicy`                                             | 任意（キーワード専用） |  不可  | `"drop_newest"`（既定）、`"drop_oldest"`、`"disconnect"` のいずれか    | `"drop_newest"` |
+| `on_error`       | `Callable[[RecordEnvelope[T], Exception], None] \| None` | 任意（キーワード専用） |   可   | `callback` が例外を送出した際に呼ばれるエラーハンドラ（既定値 `None`） | `None`          |
 
 #### 4.3.2 レスポンス / 戻り値
 
-| フィールド | データ型 | 必須性 | NULL可 | 意味・取り得る値 |
-| :--- | :--- | :---: | :---: | :--- |
-| （戻り値全体） | `SubscriptionHandle` | 必須 | 不可 | `subscription_id`, `is_active`, `dropped_count`, `unsubscribe()` を提供するハンドル |
+| フィールド     | データ型             | 必須性 | NULL可 | 意味・取り得る値                                                                    |
+| :------------- | :------------------- | :----: | :----: | :---------------------------------------------------------------------------------- |
+| （戻り値全体） | `SubscriptionHandle` |  必須  |  不可  | `subscription_id`, `is_active`, `dropped_count`, `unsubscribe()` を提供するハンドル |
 
 #### 4.3.3 エラー応答
 
-| エラーコード / 例外型 | 発生条件 | 応答形式 | 呼び出し側の対応 | 再試行可否 |
-| :--- | :--- | :--- | :--- | :--- |
-| `ValueError` | `pattern` の文法が不正（途中の `*` 等）、または `max_queue_size < 1` | 例外送出 | 引数を修正する | 不可 |
-| `KernelClosedError` | `close()` 開始後に呼び出された | 例外送出 | 登録を中止する | 不可 |
+| エラーコード / 例外型 | 発生条件                                                             | 応答形式 | 呼び出し側の対応 | 再試行可否 |
+| :-------------------- | :------------------------------------------------------------------- | :------- | :--------------- | :--------- |
+| `ValueError`          | `pattern` の文法が不正（途中の `*` 等）、または `max_queue_size < 1` | 例外送出 | 引数を修正する   | 不可       |
+| `KernelClosedError`   | `close()` 開始後に呼び出された                                       | 例外送出 | 登録を中止する   | 不可       |
 
 ---
 
@@ -343,31 +343,31 @@ related_documents:
 
 #### 4.4.1 リクエスト / 引数
 
-| IF-ID | パラメータ | データ型 | 必須性 | NULL可 | バリデーション・制約 | 例・備考 |
-| :--- | :--- | :--- | :---: | :---: | :--- | :--- |
-| IF-004 | `projection` | `ProjectionPort[T]` | 必須 | 不可 | 一意な `consumer_id` と冪等な `apply_batch` を持つ実装 | `FtsProjection()` |
-| IF-004 | `partition_patterns` | `Sequence[str]` | 任意（キーワード専用） | 不可 | 1件以上の有効な購読パターン（既定値 `("*",)`） | `("chat:*",)` |
-| IF-004 | `batch_size` | `int` | 任意（キーワード専用） | 不可 | `>= 1`（既定値 `100`） | `100` |
-| IF-004 | `retry_policy` | `RetryPolicy` | 任意（キーワード専用） | 不可 | リトライ設定（既定値 `KernelConfig.default_retry_policy`） | `RetryPolicy()` |
-| IF-004 | `failure_policy` | `ProjectionFailurePolicy \| None` | 任意（キーワード専用） | 可 | `"dlq_and_skip"`、`"pause_partition"`、または `None` | `None` |
-| IF-004 | `include_snapshots` | `bool` | 任意（キーワード専用） | 不可 | `__snapshot__` を `apply_batch` に含めるか（既定値 `False`） | `False` |
-| IF-005 | `consumer_id` | `str` | 必須 | 不可 | 登録済み Projection の `consumer_id` | `"fts_index_v1"` |
-| IF-005 | `partition_key` | `str` | 必須 | 不可 | 再開対象のパーティションキー | `"chat:general"` |
-| IF-005 | `skip_current` | `bool` | 任意（キーワード専用） | 不可 | 原因レコード1件を飛ばしてカーソルを進めるか（既定値 `False`） | `True` |
+| IF-ID  | パラメータ           | データ型                          |         必須性         | NULL可 | バリデーション・制約                                          | 例・備考          |
+| :----- | :------------------- | :-------------------------------- | :--------------------: | :----: | :------------------------------------------------------------ | :---------------- |
+| IF-004 | `projection`         | `ProjectionPort[T]`               |          必須          |  不可  | 一意な `consumer_id` と冪等な `apply_batch` を持つ実装        | `FtsProjection()` |
+| IF-004 | `partition_patterns` | `Sequence[str]`                   | 任意（キーワード専用） |  不可  | 1件以上の有効な購読パターン（既定値 `("*",)`）                | `("chat:*",)`     |
+| IF-004 | `batch_size`         | `int`                             | 任意（キーワード専用） |  不可  | `>= 1`（既定値 `100`）                                        | `100`             |
+| IF-004 | `retry_policy`       | `RetryPolicy`                     | 任意（キーワード専用） |  不可  | リトライ設定（既定値 `KernelConfig.default_retry_policy`）    | `RetryPolicy()`   |
+| IF-004 | `failure_policy`     | `ProjectionFailurePolicy \| None` | 任意（キーワード専用） |   可   | `"dlq_and_skip"`、`"pause_partition"`、または `None`          | `None`            |
+| IF-004 | `include_snapshots`  | `bool`                            | 任意（キーワード専用） |  不可  | `__snapshot__` を `apply_batch` に含めるか（既定値 `False`）  | `False`           |
+| IF-005 | `consumer_id`        | `str`                             |          必須          |  不可  | 登録済み Projection の `consumer_id`                          | `"fts_index_v1"`  |
+| IF-005 | `partition_key`      | `str`                             |          必須          |  不可  | 再開対象のパーティションキー                                  | `"chat:general"`  |
+| IF-005 | `skip_current`       | `bool`                            | 任意（キーワード専用） |  不可  | 原因レコード1件を飛ばしてカーソルを進めるか（既定値 `False`） | `True`            |
 
 #### 4.4.2 レスポンス / 戻り値
 
-| IF-ID | フィールド | データ型 | 必須性 | NULL可 | 意味・取り得る値 |
-| :--- | :--- | :--- | :---: | :---: | :--- |
-| IF-004 / IF-005 | （戻り値） | `None` | - | - | 正常登録または再開指示完了時は `None` を返す |
+| IF-ID           | フィールド | データ型 | 必須性 | NULL可 | 意味・取り得る値                             |
+| :-------------- | :--------- | :------- | :----: | :----: | :------------------------------------------- |
+| IF-004 / IF-005 | （戻り値） | `None`   |   -    |   -    | 正常登録または再開指示完了時は `None` を返す |
 
 #### 4.4.3 エラー応答
 
-| エラーコード / 例外型 | 発生条件 | 応答形式 | 呼び出し側の対応 | 再試行可否 |
-| :--- | :--- | :--- | :--- | :--- |
-| `ValueError` | 重複 `consumer_id`、未登録 `consumer_id`、`DeadLetterPort` 未注入状態で `failure_policy="dlq_and_skip"` を明示指定、不正パターン、`batch_size < 1` | 例外送出 | 設定または引数を修正する | 不可 |
-| `KernelClosedError` | `close()` 開始後に呼ばれた | 例外送出 | 処理を中止する | 不可 |
-| `KernelMaintenanceError` | メンテナンスモード中に `register_projection`、またはカーソル更新を伴う `resume_projection(..., skip_current=True)` を呼んだ場合（`subscribe` と `skip_current=False` の再開は対象外） | 例外送出 | `exit_maintenance()` 後に再実行する | 条件付き |
+| エラーコード / 例外型    | 発生条件                                                                                                                                                                              | 応答形式 | 呼び出し側の対応                    | 再試行可否 |
+| :----------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :------- | :---------------------------------- | :--------- |
+| `ValueError`             | 重複 `consumer_id`、未登録 `consumer_id`、`DeadLetterPort` 未注入状態で `failure_policy="dlq_and_skip"` を明示指定、不正パターン、`batch_size < 1`                                    | 例外送出 | 設定または引数を修正する            | 不可       |
+| `KernelClosedError`      | `close()` 開始後に呼ばれた                                                                                                                                                            | 例外送出 | 処理を中止する                      | 不可       |
+| `KernelMaintenanceError` | メンテナンスモード中に `register_projection`、またはカーソル更新を伴う `resume_projection(..., skip_current=True)` を呼んだ場合（`subscribe` と `skip_current=False` の再開は対象外） | 例外送出 | `exit_maintenance()` 後に再実行する | 条件付き   |
 
 ---
 
@@ -382,25 +382,25 @@ related_documents:
 
 #### 4.5.1 リクエスト / 引数
 
-| パラメータ | データ型 | 必須性 | NULL可 | バリデーション・制約 | 例・備考 |
-| :--- | :--- | :---: | :---: | :--- | :--- |
-| `partition_key` | `str` | 必須 | 不可 | 登録済みのパーティションキー | `"order:usdjpy"` |
-| `status` | `PartitionStatus` | 必須 | 不可 | `"active"` または `"read_only"` | `"read_only"` |
-| `expected_status` | `PartitionStatus \| None` | 任意（キーワード専用） | 可 | 楽観ロック（CAS）用の期待現在状態（既定値 `None`） | `"active"` |
+| パラメータ        | データ型                  |         必須性         | NULL可 | バリデーション・制約                               | 例・備考         |
+| :---------------- | :------------------------ | :--------------------: | :----: | :------------------------------------------------- | :--------------- |
+| `partition_key`   | `str`                     |          必須          |  不可  | 登録済みのパーティションキー                       | `"order:usdjpy"` |
+| `status`          | `PartitionStatus`         |          必須          |  不可  | `"active"` または `"read_only"`                    | `"read_only"`    |
+| `expected_status` | `PartitionStatus \| None` | 任意（キーワード専用） |   可   | 楽観ロック（CAS）用の期待現在状態（既定値 `None`） | `"active"`       |
 
 #### 4.5.2 レスポンス / 戻り値
 
-| フィールド | データ型 | 必須性 | NULL可 | 意味・取り得る値 |
-| :--- | :--- | :---: | :---: | :--- |
-| （戻り値全体） | `PartitionInfo` | 必須 | 不可 | 更新後の `PartitionInfo`（`status` が更新された状態） |
+| フィールド     | データ型        | 必須性 | NULL可 | 意味・取り得る値                                      |
+| :------------- | :-------------- | :----: | :----: | :---------------------------------------------------- |
+| （戻り値全体） | `PartitionInfo` |  必須  |  不可  | 更新後の `PartitionInfo`（`status` が更新された状態） |
 
 #### 4.5.3 エラー応答
 
-| エラーコード / 例外型 | 発生条件 | 応答形式 | 呼び出し側の対応 | 再試行可否 |
-| :--- | :--- | :--- | :--- | :--- |
-| `PartitionStateConflictError` | `expected_status` が現在の状態と不一致 | 例外送出 | 現在状態を再確認して再判断する | 条件付き |
-| `KeyError` | 未登録の `partition_key` を指定した | 例外送出 | パーティションキーを確認する | 不可 |
-| `KernelClosedError` / `KernelMaintenanceError` | 停止後またはメンテナンスモード中 | 例外送出 | メンテナンス終了後に再試行 | 条件付き |
+| エラーコード / 例外型                          | 発生条件                               | 応答形式 | 呼び出し側の対応               | 再試行可否 |
+| :--------------------------------------------- | :------------------------------------- | :------- | :----------------------------- | :--------- |
+| `PartitionStateConflictError`                  | `expected_status` が現在の状態と不一致 | 例外送出 | 現在状態を再確認して再判断する | 条件付き   |
+| `KeyError`                                     | 未登録の `partition_key` を指定した    | 例外送出 | パーティションキーを確認する   | 不可       |
+| `KernelClosedError` / `KernelMaintenanceError` | 停止後またはメンテナンスモード中       | 例外送出 | メンテナンス終了後に再試行     | 条件付き   |
 
 ---
 
@@ -419,26 +419,26 @@ related_documents:
 
 #### 4.6.1 リクエスト / 引数
 
-| IF-ID | パラメータ | データ型 | 必須性 | NULL可 | バリデーション・制約 | 例・備考 |
-| :--- | :--- | :--- | :---: | :---: | :--- | :--- |
-| IF-007 | `reason` | `str` | 必須 | 不可 | 非空文字列（ログおよび `on_enter_maintenance` に渡される） | `"daily_backup"` |
-| IF-007 | `drain_projections` | `bool` | 任意（キーワード専用） | 不可 | 登録済み全 Projection が最新 `seq` に追いつくまで待つか（既定値 `False`：実行中の1バッチ完了のみ待機） | `False` |
-| IF-007 | `timeout` | `float` | 任意（キーワード専用） | 不可 | 進行中トランザクション・Projection 待機の最大秒数（既定値 `30.0`、`> 0`） | `30.0` |
-| IF-008 | （引数なし） | - | - | - | - | - |
+| IF-ID  | パラメータ          | データ型 |         必須性         | NULL可 | バリデーション・制約                                                                                   | 例・備考         |
+| :----- | :------------------ | :------- | :--------------------: | :----: | :----------------------------------------------------------------------------------------------------- | :--------------- |
+| IF-007 | `reason`            | `str`    |          必須          |  不可  | 非空文字列（ログおよび `on_enter_maintenance` に渡される）                                             | `"daily_backup"` |
+| IF-007 | `drain_projections` | `bool`   | 任意（キーワード専用） |  不可  | 登録済み全 Projection が最新 `seq` に追いつくまで待つか（既定値 `False`：実行中の1バッチ完了のみ待機） | `False`          |
+| IF-007 | `timeout`           | `float`  | 任意（キーワード専用） |  不可  | 進行中トランザクション・Projection 待機の最大秒数（既定値 `30.0`、`> 0`）                              | `30.0`           |
+| IF-008 | （引数なし）        | -        |           -            |   -    | -                                                                                                      | -                |
 
 #### 4.6.2 レスポンス / 戻り値
 
-| IF-ID | フィールド | データ型 | 必須性 | NULL可 | 意味・取り得る値 |
-| :--- | :--- | :--- | :---: | :---: | :--- |
-| IF-007 / IF-008 | （戻り値） | `None` | - | - | 正常完了時は `None` |
+| IF-ID           | フィールド | データ型 | 必須性 | NULL可 | 意味・取り得る値    |
+| :-------------- | :--------- | :------- | :----: | :----: | :------------------ |
+| IF-007 / IF-008 | （戻り値） | `None`   |   -    |   -    | 正常完了時は `None` |
 
 #### 4.6.3 エラー応答
 
-| エラーコード / 例外型 | 発生条件 | 応答形式 | 呼び出し側の対応 | 再試行可否 |
-| :--- | :--- | :--- | :--- | :--- |
-| `TimeoutError` | `timeout` 秒以内に進行中トランザクションまたは Projection ドレインが完了しなかった場合（メンテナンスモードは自動解除されて元に戻る） | 例外送出 | 負荷が下がってから再試行するか `timeout` を延長する | 可 |
-| `KernelMaintenanceError` | 既にメンテナンスモード中に `enter_maintenance` を呼んだ | 例外送出 | 重複呼び出しを解消する | 不可 |
-| `KernelClosedError` | `close()` 開始後に呼ばれた | 例外送出 | 処理を中止する | 不可 |
+| エラーコード / 例外型    | 発生条件                                                                                                                             | 応答形式 | 呼び出し側の対応                                    | 再試行可否 |
+| :----------------------- | :----------------------------------------------------------------------------------------------------------------------------------- | :------- | :-------------------------------------------------- | :--------- |
+| `TimeoutError`           | `timeout` 秒以内に進行中トランザクションまたは Projection ドレインが完了しなかった場合（メンテナンスモードは自動解除されて元に戻る） | 例外送出 | 負荷が下がってから再試行するか `timeout` を延長する | 可         |
+| `KernelMaintenanceError` | 既にメンテナンスモード中に `enter_maintenance` を呼んだ                                                                              | 例外送出 | 重複呼び出しを解消する                              | 不可       |
+| `KernelClosedError`      | `close()` 開始後に呼ばれた                                                                                                           | 例外送出 | 処理を中止する                                      | 不可       |
 
 ---
 
@@ -453,24 +453,24 @@ related_documents:
 
 #### 4.7.1 リクエスト / 引数
 
-| パラメータ | データ型 | 必須性 | NULL可 | バリデーション・制約 | 例・備考 |
-| :--- | :--- | :---: | :---: | :--- | :--- |
-| `cursors` | `Mapping[str, int]` | 必須 | 不可 | `{partition_key: after_seq}`（`after_seq >= 0`） | `{"order:usdjpy": 120, "chat:general": 0}` |
-| `limit_per_partition` | `int` | 任意（キーワード専用） | 不可 | 1パーティションあたりの最大取得件数（既定値 `100`、`>= 1`） | `100` |
+| パラメータ            | データ型            |         必須性         | NULL可 | バリデーション・制約                                        | 例・備考                                   |
+| :-------------------- | :------------------ | :--------------------: | :----: | :---------------------------------------------------------- | :----------------------------------------- |
+| `cursors`             | `Mapping[str, int]` |          必須          |  不可  | `{partition_key: after_seq}`（`after_seq >= 0`）            | `{"order:usdjpy": 120, "chat:general": 0}` |
+| `limit_per_partition` | `int`               | 任意（キーワード専用） |  不可  | 1パーティションあたりの最大取得件数（既定値 `100`、`>= 1`） | `100`                                      |
 
 #### 4.7.2 レスポンス / 戻り値
 
-| フィールド | データ型 | 必須性 | NULL可 | 意味・取り得る値 |
-| :--- | :--- | :---: | :---: | :--- |
-| （戻り値全体） | `dict[str, list[RecordEnvelope[T]]]` | 必須 | 不可 | 差分が存在した `partition_key` をキー、昇順の `RecordEnvelope[T]` リストを値とする辞書 |
+| フィールド     | データ型                             | 必須性 | NULL可 | 意味・取り得る値                                                                       |
+| :------------- | :----------------------------------- | :----: | :----: | :------------------------------------------------------------------------------------- |
+| （戻り値全体） | `dict[str, list[RecordEnvelope[T]]]` |  必須  |  不可  | 差分が存在した `partition_key` をキー、昇順の `RecordEnvelope[T]` リストを値とする辞書 |
 
 #### 4.7.3 エラー応答
 
-| エラーコード / 例外型 | 発生条件 | 応答形式 | 呼び出し側の対応 | 再試行可否 |
-| :--- | :--- | :--- | :--- | :--- |
-| `SchemaVersionError` | 保存済みレコードの `schema_version` が `schema_registry` の最新版より新しい、または `PayloadUpcaster` が未登録・変換経路欠落 | 例外送出 | `schema_registry` と `PayloadUpcaster` の実装を確認する | 不可 |
-| `CursorExpiredError` | 指定カーソルが保持範囲より古い（※v1 では送出されない。v2 の Retention 導入時に有効化） | 例外送出 | 最新のスナップショット（`__snapshot__`）を取得してカーソルを再初期化する | 条件付き |
-| `ValueError` | `after_seq < 0` または `limit_per_partition < 1` | 例外送出 | 引数を修正する | 不可 |
+| エラーコード / 例外型 | 発生条件                                                                                                                     | 応答形式 | 呼び出し側の対応                                                         | 再試行可否 |
+| :-------------------- | :--------------------------------------------------------------------------------------------------------------------------- | :------- | :----------------------------------------------------------------------- | :--------- |
+| `SchemaVersionError`  | 保存済みレコードの `schema_version` が `schema_registry` の最新版より新しい、または `PayloadUpcaster` が未登録・変換経路欠落 | 例外送出 | `schema_registry` と `PayloadUpcaster` の実装を確認する                  | 不可       |
+| `CursorExpiredError`  | 指定カーソルが保持範囲より古い（※v1 では送出されない。v2 の Retention 導入時に有効化）                                       | 例外送出 | 最新のスナップショット（`__snapshot__`）を取得してカーソルを再初期化する | 条件付き   |
+| `ValueError`          | `after_seq < 0` または `limit_per_partition < 1`                                                                             | 例外送出 | 引数を修正する                                                           | 不可       |
 
 ---
 
@@ -488,17 +488,17 @@ related_documents:
 
 #### 4.8.1 リクエスト / 引数
 
-| パラメータ | データ型 | 必須性 | NULL可 | バリデーション・制約 | 例・備考 |
-| :--- | :--- | :---: | :---: | :--- | :--- |
-| `timeout` | `float` | 任意（キーワード専用） | 不可 | 停止待機の最大秒数（既定値 `5.0`、`>= 0.0`） | `5.0` |
-| `drain_projections` | `bool` | 任意（キーワード専用） | 不可 | 全 Projection を最新 `seq` まで処理しきるか（既定値 `False`） | `False` |
-| `drain_subscribers` | `bool` | 任意（キーワード専用） | 不可 | 全 `subscribe` キューを空になるまで処理しきるか（既定値 `False`） | `False` |
+| パラメータ          | データ型 |         必須性         | NULL可 | バリデーション・制約                                              | 例・備考 |
+| :------------------ | :------- | :--------------------: | :----: | :---------------------------------------------------------------- | :------- |
+| `timeout`           | `float`  | 任意（キーワード専用） |  不可  | 停止待機の最大秒数（既定値 `5.0`、`>= 0.0`）                      | `5.0`    |
+| `drain_projections` | `bool`   | 任意（キーワード専用） |  不可  | 全 Projection を最新 `seq` まで処理しきるか（既定値 `False`）     | `False`  |
+| `drain_subscribers` | `bool`   | 任意（キーワード専用） |  不可  | 全 `subscribe` キューを空になるまで処理しきるか（既定値 `False`） | `False`  |
 
 #### 4.8.2 レスポンス / 戻り値
 
-| フィールド | データ型 | 必須性 | NULL可 | 意味・取り得る値 |
-| :--- | :--- | :---: | :---: | :--- |
-| （戻り値全体） | `ShutdownReport` | 必須 | 不可 | `completed_cleanly`, `dropped_subscriber_events`, `pending_projection_partitions`, `elapsed_sec` を保持する |
+| フィールド     | データ型         | 必須性 | NULL可 | 意味・取り得る値                                                                                            |
+| :------------- | :--------------- | :----: | :----: | :---------------------------------------------------------------------------------------------------------- |
+| （戻り値全体） | `ShutdownReport` |  必須  |  不可  | `completed_cleanly`, `dropped_subscriber_events`, `pending_projection_partitions`, `elapsed_sec` を保持する |
 
 #### 4.8.3 エラー応答
 
@@ -512,46 +512,46 @@ related_documents:
 
 #### 4.9.1 `ShardDAOPort[T]`（IF-101）および `ShardTxPort[T]`（IF-102）
 
-| Port / メソッド | 引数 | 戻り値 | 契約・必須不変条件（異常時の例外） |
-| :--- | :--- | :--- | :--- |
-| `ShardDAOPort.durability`（プロパティ） | なし | `DurabilityLevel` | 自己申告の耐久性レベル（`"power_loss"`, `"process_crash"`, `"none"`）を返す |
-| `ShardDAOPort.write_transaction` | `shard_id: str` | `AbstractContextManager[ShardTxPort[T]]` | 単一シャード内の排他書き込みトランザクションを開始する。`with` ブロックの正常終了時に COMMIT し、例外発生時はレコードとシーケンス増分の双方を ROLLBACK する。正常終了は宣言した `durability` 水準での永続化確定を意味する |
-| `ShardDAOPort.fetch_range` | `shard_id: str`, `partition_key: str`, `after_seq: int`, `limit: int` | `Sequence[RecordEnvelope[T]]` | `seq > after_seq` のレコードを厳密な `seq` 昇順で、欠落なく最大 `limit` 件返す。空パーティションの場合は空シーケンス `()` を返す |
-| `ShardTxPort.find_by_idempotency` | `partition_key: str`, `idempotency_key: str` | `RecordEnvelope[T] \| None` | 同一トランザクション内で `(partition_key, idempotency_key)` に一致する既存レコードを検索し、`payload_hash` と `covers_through_seq` を含む完全な `RecordEnvelope[T]` を返す（未存在なら `None`） |
-| `ShardTxPort.next_sequence` | `partition_key: str` | `int` | パーティション単位の単調増加連番 `seq` を採番して返す。初回は `1`、以降は直前の確定 `seq + 1`（欠番・逆転禁止） |
-| `ShardTxPort.insert_record` | `envelope: RecordEnvelope[T]` | `None` | レコードを永続化する。`(partition_key, seq)` または `(partition_key, idempotency_key)` の一意制約違反が発生した場合は、DB ドライバー固有の例外を漏らさず `DuplicateKeyError(kind=...)` に変換して送出する |
+| Port / メソッド                         | 引数                                                                  | 戻り値                                   | 契約・必須不変条件（異常時の例外）                                                                                                                                                                                        |
+| :-------------------------------------- | :-------------------------------------------------------------------- | :--------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ShardDAOPort.durability`（プロパティ） | なし                                                                  | `DurabilityLevel`                        | 自己申告の耐久性レベル（`"power_loss"`, `"process_crash"`, `"none"`）を返す                                                                                                                                               |
+| `ShardDAOPort.write_transaction`        | `shard_id: str`                                                       | `AbstractContextManager[ShardTxPort[T]]` | 単一シャード内の排他書き込みトランザクションを開始する。`with` ブロックの正常終了時に COMMIT し、例外発生時はレコードとシーケンス増分の双方を ROLLBACK する。正常終了は宣言した `durability` 水準での永続化確定を意味する |
+| `ShardDAOPort.fetch_range`              | `shard_id: str`, `partition_key: str`, `after_seq: int`, `limit: int` | `Sequence[RecordEnvelope[T]]`            | `seq > after_seq` のレコードを厳密な `seq` 昇順で、欠落なく最大 `limit` 件返す。空パーティションの場合は空シーケンス `()` を返す                                                                                          |
+| `ShardTxPort.find_by_idempotency`       | `partition_key: str`, `idempotency_key: str`                          | `RecordEnvelope[T] \| None`              | 同一トランザクション内で `(partition_key, idempotency_key)` に一致する既存レコードを検索し、`payload_hash` と `covers_through_seq` を含む完全な `RecordEnvelope[T]` を返す（未存在なら `None`）                           |
+| `ShardTxPort.next_sequence`             | `partition_key: str`                                                  | `int`                                    | パーティション単位の単調増加連番 `seq` を採番して返す。初回は `1`、以降は直前の確定 `seq + 1`（欠番・逆転禁止）                                                                                                           |
+| `ShardTxPort.insert_record`             | `envelope: RecordEnvelope[T]`                                         | `None`                                   | レコードを永続化する。`(partition_key, seq)` または `(partition_key, idempotency_key)` の一意制約違反が発生した場合は、DB ドライバー固有の例外を漏らさず `DuplicateKeyError(kind=...)` に変換して送出する                 |
 
 #### 4.9.2 `MetaDAOPort`（IF-103）
 
-| メソッド / プロパティ | 引数 | 戻り値 | 契約・必須不変条件（異常時の例外） |
-| :--- | :--- | :--- | :--- |
-| `durability`（プロパティ） | なし | `DurabilityLevel` | メタストレージの耐久性レベルを返す |
-| `get_partition` | `partition_key: str` | `PartitionInfo \| None` | 登録済みパーティション情報を返す。未登録なら `None` |
-| `bind_shard` | `partition_key: str`, `shard_id: str` | `PartitionInfo` | 未登録なら `status="active"` で新規登録して返す。**登録済みなら決して上書きせず、既存の `PartitionInfo`（最初に確定した `shard_id`）をそのまま返す（並行呼び出しに対して冪等かつ不変）** |
-| `set_partition_status` | `partition_key: str`, `status: PartitionStatus`, `*, expected_status: PartitionStatus \| None = None` | `PartitionInfo` | パーティション状態を更新して返す。`expected_status` が指定され現在の状態と異なる場合は、状態を更新せず `PartitionStateConflictError` を送出する |
-| `list_partitions` | `*, status: PartitionStatus \| None = None` | `Sequence[PartitionInfo]` | 登録済みパーティション一覧を返す。`status` 指定時は該当状態のみを絞り込んで返す（`ProjectionRunner` の起動時キャッチアップに使用） |
-| `get_cursor` | `consumer_id: str`, `partition_key: str` | `int` | 指定 `(consumer_id, partition_key)` の最終処理済み `seq` を返す。未記録時は `0` を返す |
-| `advance_cursor` | `consumer_id: str`, `partition_key: str`, `seq: int` | `None` | カーソルを **単調非減少（`MAX(current_seq, seq)`）** で更新する。過去の小さな `seq` が渡されても決して後退させてはならない |
+| メソッド / プロパティ      | 引数                                                                                                  | 戻り値                    | 契約・必須不変条件（異常時の例外）                                                                                                                                                       |
+| :------------------------- | :---------------------------------------------------------------------------------------------------- | :------------------------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `durability`（プロパティ） | なし                                                                                                  | `DurabilityLevel`         | メタストレージの耐久性レベルを返す                                                                                                                                                       |
+| `get_partition`            | `partition_key: str`                                                                                  | `PartitionInfo \| None`   | 登録済みパーティション情報を返す。未登録なら `None`                                                                                                                                      |
+| `bind_shard`               | `partition_key: str`, `shard_id: str`                                                                 | `PartitionInfo`           | 未登録なら `status="active"` で新規登録して返す。**登録済みなら決して上書きせず、既存の `PartitionInfo`（最初に確定した `shard_id`）をそのまま返す（並行呼び出しに対して冪等かつ不変）** |
+| `set_partition_status`     | `partition_key: str`, `status: PartitionStatus`, `*, expected_status: PartitionStatus \| None = None` | `PartitionInfo`           | パーティション状態を更新して返す。`expected_status` が指定され現在の状態と異なる場合は、状態を更新せず `PartitionStateConflictError` を送出する                                          |
+| `list_partitions`          | `*, status: PartitionStatus \| None = None`                                                           | `Sequence[PartitionInfo]` | 登録済みパーティション一覧を返す。`status` 指定時は該当状態のみを絞り込んで返す（`ProjectionRunner` の起動時キャッチアップに使用）                                                       |
+| `get_cursor`               | `consumer_id: str`, `partition_key: str`                                                              | `int`                     | 指定 `(consumer_id, partition_key)` の最終処理済み `seq` を返す。未記録時は `0` を返す                                                                                                   |
+| `advance_cursor`           | `consumer_id: str`, `partition_key: str`, `seq: int`                                                  | `None`                    | カーソルを **単調非減少（`MAX(current_seq, seq)`）** で更新する。過去の小さな `seq` が渡されても決して後退させてはならない                                                               |
 
 #### 4.9.3 `ProjectionPort[T]`（IF-104）および `DeadLetterPort[T]`（IF-105）
 
-| Port / メソッド | 引数 | 戻り値 | 契約・必須不変条件（異常時の例外） |
-| :--- | :--- | :--- | :--- |
-| `ProjectionPort.consumer_id`（プロパティ） | なし | `str` | カーソル管理および DLQ 記録に使われる一意な Consumer 識別子 |
-| `ProjectionPort.apply_batch` | `records: Sequence[RecordEnvelope[T]]` | `None` | レコード群を検索 DB や集計ビューへ投影する。**At-Least-Once 配信のため、`(partition_key, seq)` に対して完全に冪等であること**。失敗時は例外を送出し、基盤側の Retry / Poison Pill 制御に委ねる |
-| `DeadLetterPort.put_dead_letter` | `record: DeadLetterRecord[T]` | `None` | リトライ上限を超えた単件レコード（Poison Pill）を永続化隔離する |
-| `DeadLetterPort.list_dead_letters` | `*, consumer_id: str \| None = None`, `limit: int = 100` | `Sequence[DeadLetterRecord[T]]` | 隔離された Dead Letter の一覧を返す（`consumer_id` 指定時はフィルタリング） |
+| Port / メソッド                            | 引数                                                     | 戻り値                          | 契約・必須不変条件（異常時の例外）                                                                                                                                                             |
+| :----------------------------------------- | :------------------------------------------------------- | :------------------------------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ProjectionPort.consumer_id`（プロパティ） | なし                                                     | `str`                           | カーソル管理および DLQ 記録に使われる一意な Consumer 識別子                                                                                                                                    |
+| `ProjectionPort.apply_batch`               | `records: Sequence[RecordEnvelope[T]]`                   | `None`                          | レコード群を検索 DB や集計ビューへ投影する。**At-Least-Once 配信のため、`(partition_key, seq)` に対して完全に冪等であること**。失敗時は例外を送出し、基盤側の Retry / Poison Pill 制御に委ねる |
+| `DeadLetterPort.put_dead_letter`           | `record: DeadLetterRecord[T]`                            | `None`                          | リトライ上限を超えた単件レコード（Poison Pill）を永続化隔離する                                                                                                                                |
+| `DeadLetterPort.list_dead_letters`         | `*, consumer_id: str \| None = None`, `limit: int = 100` | `Sequence[DeadLetterRecord[T]]` | 隔離された Dead Letter の一覧を返す（`consumer_id` 指定時はフィルタリング）                                                                                                                    |
 
 #### 4.9.4 `PayloadCodec[T]`（IF-106）、`PayloadUpcaster`（IF-107）、`PartitionRouterPort`（IF-108）、`MaintenanceHooks`（IF-109）
 
-| Port / メソッド | 引数 | 戻り値 | 契約・必須不変条件（異常時の例外） |
-| :--- | :--- | :--- | :--- |
-| `PayloadCodec.encode` | `value: T` | `bytes` | ペイロードをバイト列へ変換する。**決定論的であること（論理的に等価な値から常に同一バイト列を返すこと。辞書キー順や浮動小数点表記の揺れを排除する）** |
-| `PayloadCodec.decode` | `data: bytes` | `T` | 最新 `schema_version` のバイト列からドメインペイロード `T` を復元する |
-| `PayloadUpcaster.upcast` | `record_type: str`, `from_version: int`, `raw_payload: bytes` | `bytes` | 旧版のバイト列を **`from_version` から `from_version + 1` へ 1 版だけ進めたバイト列** を返す。決定論的かつ副作用なし（保存済みレコードは書き換えない）。未知の版や変換不能時は `SchemaVersionError` を送出する |
-| `PartitionRouterPort.select_shard` | `partition_key: str`, `*, preferred_shard: str \| None = None` | `str` | 新規パーティションの格納先 `shard_id` を決定する純粋なポリシー関数（パーティション移動は扱わない） |
-| `MaintenanceHooks.on_enter_maintenance` | `reason: str` | `None` | 新規更新が遮断され進行中トランザクションがすべて完了した整合点で呼ばれる。親プロジェクトはこのフック内でバックアップを実行する |
-| `MaintenanceHooks.on_exit_maintenance` | なし | `None` | `exit_maintenance()` 時に通常運転へ戻る直前に呼ばれる |
+| Port / メソッド                         | 引数                                                           | 戻り値  | 契約・必須不変条件（異常時の例外）                                                                                                                                                                             |
+| :-------------------------------------- | :------------------------------------------------------------- | :------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PayloadCodec.encode`                   | `value: T`                                                     | `bytes` | ペイロードをバイト列へ変換する。**決定論的であること（論理的に等価な値から常に同一バイト列を返すこと。辞書キー順や浮動小数点表記の揺れを排除する）**                                                           |
+| `PayloadCodec.decode`                   | `data: bytes`                                                  | `T`     | 最新 `schema_version` のバイト列からドメインペイロード `T` を復元する                                                                                                                                          |
+| `PayloadUpcaster.upcast`                | `record_type: str`, `from_version: int`, `raw_payload: bytes`  | `bytes` | 旧版のバイト列を **`from_version` から `from_version + 1` へ 1 版だけ進めたバイト列** を返す。決定論的かつ副作用なし（保存済みレコードは書き換えない）。未知の版や変換不能時は `SchemaVersionError` を送出する |
+| `PartitionRouterPort.select_shard`      | `partition_key: str`, `*, preferred_shard: str \| None = None` | `str`   | 新規パーティションの格納先 `shard_id` を決定する純粋なポリシー関数（パーティション移動は扱わない）                                                                                                             |
+| `MaintenanceHooks.on_enter_maintenance` | `reason: str`                                                  | `None`  | 新規更新が遮断され進行中トランザクションがすべて完了した整合点で呼ばれる。親プロジェクトはこのフック内でバックアップを実行する                                                                                 |
+| `MaintenanceHooks.on_exit_maintenance`  | なし                                                           | `None`  | `exit_maintenance()` 時に通常運転へ戻る直前に呼ばれる                                                                                                                                                          |
 
 ---
 
@@ -576,21 +576,21 @@ related_documents:
 
 親プロジェクトが独自の DAO / Projection / Codec / Upcaster を実装した際、`storage_kernel.testing.contract_test`（`unittest.TestCase` ベース、`make_dao()` フック提供）を継承して検証すべき 13 項目の外部契約テスト要件を下表に定義する（Issue #2・#3・#4）。具体的なテストケース・実行結果・証跡はテスト計画・結果報告書、品質ゲートは [`DBF-ENV-001`](../setup/DBF-ENV-001_環境・開発基盤仕様書.md)（`QG-004`）を正本とし、本書へ再掲しない。
 
-| 要件ID | 対象IF-ID | 保証すべき契約上の振る舞い | 検証観点 | 対応テストケース |
-| :--- | :--- | :--- | :--- | :--- |
-| TR-IF-001 | IF-101 / IF-102 | **ロールバックの原子性（`ShardDAOPort`）**: `write_transaction` 内で例外を送出したとき、挿入レコードと `next_sequence` の増分の両方が巻き戻ること | 異常 / 原子性 | `ContractTest.test_01_rollback_atomicity` |
-| TR-IF-002 | IF-101 / IF-103 | **再接続後の永続性（`ShardDAOPort` / `MetaDAOPort`）**: `make_dao()` で同じバックエンドを指す新しいインスタンスを作り直したとき、直前の書き込み・シャードバインド・カーソルが読み取れること（`durability == "none"` の場合はスキップ） | 正常 / 永続性 | `ContractTest.test_02_persistence_across_reconnect` |
-| TR-IF-003 | IF-101 / IF-102 | **単調増加・厳密昇順・欠番なし（`ShardDAOPort`）**: 連続書き込みおよび並行書き込みで `seq` が `1, 2, 3, ...` と欠番なく採番され、`fetch_range` が厳密な昇順で返すこと | 正常 / 並行性 / 順序 | `ContractTest.test_03_monotonic_sequence_and_fetch_order` |
-| TR-IF-004 | IF-101 / IF-102 | **冪等な再送で元のレコードを返す（`ShardDAOPort`）**: 同じ `(partition_key, idempotency_key, payload_hash)` では `seq` が増えず、`find_by_idempotency` で元の `RecordEnvelope` がそのまま返ること | 正常 / 冪等性 | `ContractTest.test_04_idempotent_lookup_returns_original` |
-| TR-IF-005 | IF-102 | **一意制約違反の例外変換（`ShardTxPort`）**: `(partition_key, seq)` または `(partition_key, idempotency_key)` の重複挿入時に、DB 固有の例外ではなく `DuplicateKeyError`（適切な `kind`）が送出されること | 異常 / 例外変換 | `ContractTest.test_05_unique_violation_raises_duplicate_key_error` |
-| TR-IF-006 | IF-101 / IF-102 | **パーティション間のスコープ分離（`ShardDAOPort`）**: `partition_key` が異なれば、同じ `idempotency_key` でも衝突せず独立して `seq=1` から書き込めること | 正常 / 境界 | `ContractTest.test_06_idempotency_scope_isolated_by_partition` |
-| TR-IF-007 | IF-103 | **シャードバインドの冪等性と不変性（`MetaDAOPort`）**: 並行または複数回、異なる `shard_id` で `bind_shard` を呼んでも上書きされず、最初に確定した `shard_id` が維持されること | 正常 / 並行性 / 不変性 | `ContractTest.test_07_bind_shard_idempotent_and_immutable` |
-| TR-IF-008 | IF-101 / IF-103 | **空パーティションの許容（`MetaDAOPort` / `ShardDAOPort`）**: `bind_shard` だけ完了しレコード未挿入のパーティションに対して、`fetch_range` が空列を返し、初回の書き込みが `seq=1` になること | 正常 / 境界 | `ContractTest.test_08_empty_partition_allowed` |
-| TR-IF-009 | IF-103 | **カーソルの単調性（`MetaDAOPort`）**: 現在のカーソルより小さい過去の `seq` で `advance_cursor` を呼んでも、カーソルが後退しないこと | 正常 / 不変条件 | `ContractTest.test_09_cursor_monotonic_non_decreasing` |
-| TR-IF-010 | IF-104 | **同じバッチの再適用の冪等性（`ProjectionPort`）**: 同じ `RecordEnvelope` 群を 2 回続けて `apply_batch` に渡しても、重複行や状態破壊が起きないこと | 正常 / 冪等性 | `ContractTest.test_10_projection_apply_batch_idempotent` |
-| TR-IF-011 | IF-106 | **encode の決定論性（`PayloadCodec`）**: 論理的に等価な値（キーの挿入順が異なる dict など）を `encode` したとき、常に完全一致するバイト列を返すこと | 正常 / 決定論性 | `ContractTest.test_11_payload_codec_deterministic_encode` |
-| TR-IF-012 | IF-103 | **パーティション状態遷移と一覧取得（`MetaDAOPort`）**: `bind_shard` 直後の `status` が `"active"` であること。`set_partition_status(..., expected_status=...)` が不一致のとき `PartitionStateConflictError` を送出し、`list_partitions(status=...)` が条件どおりに返すこと | 正常 / 異常 / 状態遷移 | `ContractTest.test_12_partition_status_transition_and_listing` |
-| TR-IF-013 | IF-107 | **Upcaster の決定論性と未知版の拒否（`PayloadUpcaster`）**: 同じ `(record_type, from_version, raw_payload)` から常に同じバイト列を返し、変換経路のない未知の版に対して `SchemaVersionError` を送出すること | 正常 / 異常 / 互換性 | `ContractTest.test_13_payload_upcaster_deterministic_and_unknown_version` |
+| 要件ID    | 対象IF-ID       | 保証すべき契約上の振る舞い                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | 検証観点               | 対応テストケース                                                          |
+| :-------- | :-------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------- | :------------------------------------------------------------------------ |
+| TR-IF-001 | IF-101 / IF-102 | **ロールバックの原子性（`ShardDAOPort`）**: `write_transaction` 内で例外を送出したとき、挿入レコードと `next_sequence` の増分の両方が巻き戻ること                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 異常 / 原子性          | `ContractTest.test_01_rollback_atomicity`                                 |
+| TR-IF-002 | IF-101 / IF-103 | **再接続後の永続性（`ShardDAOPort` / `MetaDAOPort`）**: `make_dao()` で同じバックエンドを指す新しいインスタンスを作り直したとき、直前の書き込み・シャードバインド・カーソルが読み取れること。shard の書き込み検証は `shard_dao.durability != "none"` のときだけ、meta（バインド・カーソル）の検証は `meta_dao.durability != "none"` のときだけ実行し、両方が `"none"` のときに限りテスト全体をスキップする                                                                                                                                                                                                      | 正常 / 永続性          | `ContractTest.test_02_persistence_across_reconnect`                       |
+| TR-IF-003 | IF-101 / IF-102 | **単調増加・厳密昇順・欠番なし（`ShardDAOPort`）**: 同一スレッドの連続書き込みと並行書き込みの両方で、`seq` が `1, 2, 3, ...` と欠番・重複なく採番され、`fetch_range` が厳密な昇順で返すこと                                                                                                                                                                                                                                                                                                                                                                                                                    | 正常 / 並行性 / 順序   | `ContractTest.test_03_monotonic_sequence_and_fetch_order`                 |
+| TR-IF-004 | IF-101 / IF-102 | **冪等な再送で元のレコードを返す（`ShardDAOPort`）**: 同じ `(partition_key, idempotency_key, payload_hash)` を再送しても `seq` が増えず（再送後の最終 `seq` と次回採番値が変わらない）、`find_by_idempotency` が元と同じ `seq`・`payload_hash`・payload の `RecordEnvelope` を返し、保存件数が 1 件のままであること                                                                                                                                                                                                                                                                                             | 正常 / 冪等性          | `ContractTest.test_04_idempotent_lookup_returns_original`                 |
+| TR-IF-005 | IF-102          | **一意制約違反の例外変換（`ShardTxPort`）**: `(partition_key, seq)` または `(partition_key, idempotency_key)` の重複挿入時に、DB 固有の例外ではなく `DuplicateKeyError` が送出されること。`kind` は `seq` の重複なら `"sequence"`、冪等キーの重複なら `"idempotency_key"` を必須とし、`"unknown"` は不合格とする                                                                                                                                                                                                                                                                                                | 異常 / 例外変換        | `ContractTest.test_05_unique_violation_raises_duplicate_key_error`        |
+| TR-IF-006 | IF-101 / IF-102 | **パーティション間のスコープ分離（`ShardDAOPort`）**: `partition_key` が異なれば、同じ `idempotency_key` でも衝突せず独立して `seq=1` から書き込めること                                                                                                                                                                                                                                                                                                                                                                                                                                                        | 正常 / 境界            | `ContractTest.test_06_idempotency_scope_isolated_by_partition`            |
+| TR-IF-007 | IF-103          | **シャードバインドの冪等性と不変性（`MetaDAOPort`）**: 並行または複数回、異なる `shard_id` で `bind_shard` を呼んでも上書きされず、最初に確定した `shard_id` が維持されること                                                                                                                                                                                                                                                                                                                                                                                                                                   | 正常 / 並行性 / 不変性 | `ContractTest.test_07_bind_shard_idempotent_and_immutable`                |
+| TR-IF-008 | IF-101 / IF-103 | **空パーティションの許容（`MetaDAOPort` / `ShardDAOPort`）**: `bind_shard` だけ完了しレコード未挿入のパーティションに対して、`fetch_range` が空列を返し、初回の書き込みが `seq=1` になること                                                                                                                                                                                                                                                                                                                                                                                                                    | 正常 / 境界            | `ContractTest.test_08_empty_partition_allowed`                            |
+| TR-IF-009 | IF-103          | **カーソルの単調性（`MetaDAOPort`）**: 現在のカーソルより小さい過去の `seq` で `advance_cursor` を呼んでも、カーソルが後退しないこと                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 正常 / 不変条件        | `ContractTest.test_09_cursor_monotonic_non_decreasing`                    |
+| TR-IF-010 | IF-104          | **同じバッチの再適用の冪等性（`ProjectionPort`）**: 同じ `RecordEnvelope` 群を 2 回続けて `apply_batch` に渡しても、各 `(partition_key, seq)` の保持件数が 1 件のままであること。`ProjectionPort` には読み戻し口がないため、親プロジェクトは Contract Test サブクラスで `projected_seqs(projection, partition_key) -> Sequence[int]` を実装する（Projection が当該パーティションについて保持している行の `seq` を 1 行 1 要素で返す。重複して保持していれば同じ値を重複して返す）。未実装（基底の既定）の場合は黙って通らず、実装方法を示す `NotImplementedError` で失敗する。`ProjectionPort` 自体は変更しない | 正常 / 冪等性          | `ContractTest.test_10_projection_apply_batch_idempotent`                  |
+| TR-IF-011 | IF-106          | **encode の決定論性（`PayloadCodec`）**: 論理的に等価な値（キーの挿入順が異なる dict など）を `encode` したとき、常に完全一致するバイト列を返すこと                                                                                                                                                                                                                                                                                                                                                                                                                                                             | 正常 / 決定論性        | `ContractTest.test_11_payload_codec_deterministic_encode`                 |
+| TR-IF-012 | IF-103          | **パーティション状態遷移と一覧取得（`MetaDAOPort`）**: `bind_shard` 直後の `status` が `"active"` であること。`set_partition_status(..., expected_status=...)` が不一致のとき `PartitionStateConflictError` を送出し、`list_partitions(status=...)` が条件どおりに返すこと                                                                                                                                                                                                                                                                                                                                      | 正常 / 異常 / 状態遷移 | `ContractTest.test_12_partition_status_transition_and_listing`            |
+| TR-IF-013 | IF-107          | **Upcaster の決定論性と未知版の拒否（`PayloadUpcaster`）**: 同じ `(record_type, from_version, raw_payload)` から常に同じバイト列を返し、変換経路のない未知の版に対して `SchemaVersionError` を送出すること                                                                                                                                                                                                                                                                                                                                                                                                      | 正常 / 異常 / 互換性   | `ContractTest.test_13_payload_upcaster_deterministic_and_unknown_version` |
 
 ---
 
@@ -610,7 +610,8 @@ related_documents:
 
 ## 8. 改訂履歴 (Change Log)
 
-| 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                                           |
-| :------ | :--------- | :----- | :--------------------------------------------------------------------------------- |
-| Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #13 に基づき公開API、Port/SPI、契約型・例外、Contract Test 13項目を制定） |
+| 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                                                                                                                                                  |
+| :------ | :--------- | :----- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #13 に基づき公開API、Port/SPI、契約型・例外、Contract Test 13項目を制定）                                                                                                 |
 | Rev.1.1 | 2026-11-20 | xzyozi | コンストラクタ引数（`store_raw_bytes` を含む）の節を追加し、メンテナンス中の `subscribe`（許可）・`register_projection`（拒否）、`resume_projection` の close 後の扱いを明記（Issue #40） |
+| Rev.1.2 | 2026-11-20 | xzyozi | Contract Test の表を実装と同じ強さに改訂（Issue #38）。TR-IF-010 に `projected_seqs` フックを追加し、TR-IF-002 のスキップ条件を shard/meta 別に分離、TR-IF-003〜005 の基準を強化          |
