@@ -2,13 +2,35 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+import logging
 from pathlib import Path
 import sqlite3
 import threading
 from typing import Any
 
 from storage_kernel import RecordEnvelope
+
+logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _immediate_transaction(conn: sqlite3.Connection) -> Iterator[None]:
+    """BEGIN IMMEDIATE から COMMIT までを囲み、失敗時は ROLLBACK しても元の例外を保つ。
+
+    親プロジェクトは参照実装（storage_kernel.contrib.sqlite）の内部関数に依存しないため、同じ形をここに持つ。
+    """
+    conn.execute("BEGIN IMMEDIATE;")
+    try:
+        yield
+        conn.execute("COMMIT;")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK;")
+        except sqlite3.Error:
+            logger.warning("ROLLBACK に失敗しました（元の例外を優先して送出します）", exc_info=True)
+        raise
 
 
 class SqliteFts5Projection:
@@ -54,8 +76,7 @@ class SqliteFts5Projection:
         with self._lock:
             conn = self._connect()
             try:
-                conn.execute("BEGIN IMMEDIATE;")
-                try:
+                with _immediate_transaction(conn):
                     for rec in records:
                         conn.execute(
                             "DELETE FROM records_fts WHERE partition_key = ? AND seq = ?",
@@ -66,10 +87,6 @@ class SqliteFts5Projection:
                             "INSERT INTO records_fts (partition_key, seq, record_type, content) VALUES (?, ?, ?, ?)",
                             (rec.partition_key, rec.seq, rec.record_type, searchable),
                         )
-                    conn.execute("COMMIT;")
-                except Exception:
-                    conn.execute("ROLLBACK;")
-                    raise
             finally:
                 conn.close()
 

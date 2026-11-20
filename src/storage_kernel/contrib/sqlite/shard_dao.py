@@ -12,6 +12,7 @@ from typing import Any, Generic, Literal, TypeVar, cast
 from ...contracts.envelope import DurabilityLevel, RecordEnvelope
 from ...contracts.errors import DuplicateKeyError
 from ...ports.codec import PayloadCodec
+from ._transaction import immediate_transaction
 
 T = TypeVar("T")
 
@@ -204,15 +205,8 @@ class SqliteShardDAO(Generic[T]):
     @contextmanager
     def write_transaction(self, shard_id: str) -> Iterator[_SqliteShardTx[T]]:
         self._ensure_shard_schema(shard_id)
-        with self._get_shard_lock(shard_id), self._connect(shard_id) as conn:
-            conn.execute("BEGIN IMMEDIATE;")
-            tx = _SqliteShardTx(conn, self._codec)
-            try:
-                yield tx
-                conn.execute("COMMIT;")
-            except Exception:
-                conn.execute("ROLLBACK;")
-                raise
+        with self._get_shard_lock(shard_id), self._connect(shard_id) as conn, immediate_transaction(conn):
+            yield _SqliteShardTx(conn, self._codec)
 
     def fetch_range(
         self,

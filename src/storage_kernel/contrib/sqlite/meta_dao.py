@@ -19,6 +19,7 @@ from ...contracts.envelope import (
 )
 from ...contracts.errors import PartitionStateConflictError
 from ...ports.codec import PayloadCodec
+from ._transaction import immediate_transaction
 
 T = TypeVar("T")
 
@@ -106,26 +107,20 @@ class SqliteMetaDAO:
             return self._row_to_partition(row) if row is not None else None
 
     def bind_shard(self, partition_key: str, shard_id: str) -> PartitionInfo:
-        with self._lock, self._connect() as conn:
-            conn.execute("BEGIN IMMEDIATE;")
-            try:
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO partitions (partition_key, shard_id, status, created_at)
-                    VALUES (?, ?, 'active', ?)
-                    """,
-                    (partition_key, shard_id, time.time()),
-                )
-                row = conn.execute(
-                    "SELECT partition_key, shard_id, status, created_at FROM partitions WHERE partition_key = ?",
-                    (partition_key,),
-                ).fetchone()
-                conn.execute("COMMIT;")
-                assert row is not None
-                return self._row_to_partition(row)
-            except Exception:
-                conn.execute("ROLLBACK;")
-                raise
+        with self._lock, self._connect() as conn, immediate_transaction(conn):
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO partitions (partition_key, shard_id, status, created_at)
+                VALUES (?, ?, 'active', ?)
+                """,
+                (partition_key, shard_id, time.time()),
+            )
+            row = conn.execute(
+                "SELECT partition_key, shard_id, status, created_at FROM partitions WHERE partition_key = ?",
+                (partition_key,),
+            ).fetchone()
+            assert row is not None
+            return self._row_to_partition(row)
 
     def set_partition_status(
         self,
@@ -134,34 +129,28 @@ class SqliteMetaDAO:
         *,
         expected_status: PartitionStatus | None = None,
     ) -> PartitionInfo:
-        with self._lock, self._connect() as conn:
-            conn.execute("BEGIN IMMEDIATE;")
-            try:
-                row = conn.execute(
-                    "SELECT partition_key, shard_id, status, created_at FROM partitions WHERE partition_key = ?",
-                    (partition_key,),
-                ).fetchone()
-                if row is None:
-                    raise KeyError(f"partition not registered: {partition_key}")
-                current = self._row_to_partition(row)
-                if expected_status is not None and current.status != expected_status:
-                    raise PartitionStateConflictError(
-                        f"expected status {expected_status!r} for {partition_key}, got {current.status!r}"
-                    )
-                conn.execute(
-                    "UPDATE partitions SET status = ? WHERE partition_key = ?",
-                    (status, partition_key),
+        with self._lock, self._connect() as conn, immediate_transaction(conn):
+            row = conn.execute(
+                "SELECT partition_key, shard_id, status, created_at FROM partitions WHERE partition_key = ?",
+                (partition_key,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"partition not registered: {partition_key}")
+            current = self._row_to_partition(row)
+            if expected_status is not None and current.status != expected_status:
+                raise PartitionStateConflictError(
+                    f"expected status {expected_status!r} for {partition_key}, got {current.status!r}"
                 )
-                updated_row = conn.execute(
-                    "SELECT partition_key, shard_id, status, created_at FROM partitions WHERE partition_key = ?",
-                    (partition_key,),
-                ).fetchone()
-                conn.execute("COMMIT;")
-                assert updated_row is not None
-                return self._row_to_partition(updated_row)
-            except Exception:
-                conn.execute("ROLLBACK;")
-                raise
+            conn.execute(
+                "UPDATE partitions SET status = ? WHERE partition_key = ?",
+                (status, partition_key),
+            )
+            updated_row = conn.execute(
+                "SELECT partition_key, shard_id, status, created_at FROM partitions WHERE partition_key = ?",
+                (partition_key,),
+            ).fetchone()
+            assert updated_row is not None
+            return self._row_to_partition(updated_row)
 
     def list_partitions(self, *, status: PartitionStatus | None = None) -> Sequence[PartitionInfo]:
         with self._lock, self._connect() as conn:
@@ -186,23 +175,17 @@ class SqliteMetaDAO:
             return int(row["last_seq"]) if row is not None else 0
 
     def advance_cursor(self, consumer_id: str, partition_key: str, seq: int) -> None:
-        with self._lock, self._connect() as conn:
-            conn.execute("BEGIN IMMEDIATE;")
-            try:
-                conn.execute(
-                    """
-                    INSERT INTO cursors (consumer_id, partition_key, last_seq, updated_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(consumer_id, partition_key) DO UPDATE SET
-                        last_seq = MAX(cursors.last_seq, excluded.last_seq),
-                        updated_at = excluded.updated_at
-                    """,
-                    (consumer_id, partition_key, seq, time.time()),
-                )
-                conn.execute("COMMIT;")
-            except Exception:
-                conn.execute("ROLLBACK;")
-                raise
+        with self._lock, self._connect() as conn, immediate_transaction(conn):
+            conn.execute(
+                """
+                INSERT INTO cursors (consumer_id, partition_key, last_seq, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(consumer_id, partition_key) DO UPDATE SET
+                    last_seq = MAX(cursors.last_seq, excluded.last_seq),
+                    updated_at = excluded.updated_at
+                """,
+                (consumer_id, partition_key, seq, time.time()),
+            )
 
 
 class SqliteDeadLetterDAO(Generic[T]):
@@ -278,45 +261,39 @@ class SqliteDeadLetterDAO(Generic[T]):
     def put_dead_letter(self, record: DeadLetterRecord[T]) -> None:
         env = record.envelope
         raw_payload = self._encode_payload(env.payload)
-        with self._lock, self._connect() as conn:
-            conn.execute("BEGIN IMMEDIATE;")
-            try:
-                conn.execute(
-                    """
-                    INSERT INTO dead_letters (
-                        consumer_id, partition_key, seq, idempotency_key,
-                        record_type, schema_version, payload_hash, payload,
-                        created_at, covers_through_seq, error_type, error_message,
-                        attempts, failed_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(consumer_id, partition_key, seq) DO UPDATE SET
-                        error_type = excluded.error_type,
-                        error_message = excluded.error_message,
-                        attempts = excluded.attempts,
-                        failed_at = excluded.failed_at
-                    """,
-                    (
-                        record.consumer_id,
-                        env.partition_key,
-                        env.seq,
-                        env.idempotency_key,
-                        env.record_type,
-                        env.schema_version,
-                        env.payload_hash,
-                        raw_payload,
-                        env.created_at,
-                        env.covers_through_seq,
-                        record.error_type,
-                        record.error_message,
-                        record.attempts,
-                        record.failed_at,
-                    ),
+        with self._lock, self._connect() as conn, immediate_transaction(conn):
+            conn.execute(
+                """
+                INSERT INTO dead_letters (
+                    consumer_id, partition_key, seq, idempotency_key,
+                    record_type, schema_version, payload_hash, payload,
+                    created_at, covers_through_seq, error_type, error_message,
+                    attempts, failed_at
                 )
-                conn.execute("COMMIT;")
-            except Exception:
-                conn.execute("ROLLBACK;")
-                raise
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(consumer_id, partition_key, seq) DO UPDATE SET
+                    error_type = excluded.error_type,
+                    error_message = excluded.error_message,
+                    attempts = excluded.attempts,
+                    failed_at = excluded.failed_at
+                """,
+                (
+                    record.consumer_id,
+                    env.partition_key,
+                    env.seq,
+                    env.idempotency_key,
+                    env.record_type,
+                    env.schema_version,
+                    env.payload_hash,
+                    raw_payload,
+                    env.created_at,
+                    env.covers_through_seq,
+                    record.error_type,
+                    record.error_message,
+                    record.attempts,
+                    record.failed_at,
+                ),
+            )
 
     def list_dead_letters(
         self,
