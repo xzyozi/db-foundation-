@@ -217,6 +217,45 @@ class TestProjection(unittest.TestCase):
         )
 
 
+class TestSchemaVersionErrorPausesPartition(unittest.TestCase):
+    """TR-DD2-010: SchemaVersionError は failure_policy に関わらずパーティションを一時停止し、DLQ へ隔離しない。"""
+
+    def test_schema_version_error_pauses_partition_even_with_dlq_and_skip(self) -> None:
+        store: InMemoryStorageBackend[dict[str, Any]] = InMemoryStorageBackend()
+        shard_dao = InMemoryShardDAO(store)
+        meta_dao = InMemoryMetaDAO(store)
+        dlq = InMemoryDeadLetter(store)
+
+        old_kernel: StorageKernel[dict[str, Any]] = StorageKernel(
+            config=KernelConfig(schema_registry={"tick": 1}),
+            shard_dao=shard_dao,
+            meta_dao=meta_dao,
+            codec=JsonDeterministicCodec(),
+            router=SimplePartitionRouter(),
+        )
+        self.addCleanup(old_kernel.close)
+        old_kernel.append("sv:1", "tick", {"n": 1}, "idem-1", schema_version=1)
+
+        # 最新版が 2 に上がったが Upcaster がない: v1 レコードの変換経路が欠落している
+        new_kernel: StorageKernel[dict[str, Any]] = StorageKernel(
+            config=KernelConfig(schema_registry={"tick": 2}),
+            shard_dao=shard_dao,
+            meta_dao=meta_dao,
+            codec=JsonDeterministicCodec(),
+            router=SimplePartitionRouter(),
+            dead_letter_port=dlq,
+        )
+        self.addCleanup(new_kernel.close)
+        proj = InMemoryProjection[dict[str, Any]]("proj_sv")
+        new_kernel.register_projection(proj, failure_policy="dlq_and_skip")
+
+        worker = new_kernel._projection_runner._workers["proj_sv"]
+        self.assertTrue(_wait_until(lambda: "sv:1" in worker._paused_partitions))
+        self.assertEqual(list(dlq.list_dead_letters(consumer_id="proj_sv")), [])
+        self.assertEqual(meta_dao.get_cursor("proj_sv", "sv:1"), 0)
+        self.assertEqual(proj.records_for("sv:1"), [])
+
+
 class _RunnerTestBase(unittest.TestCase):
     """ProjectionRunner を StorageKernel 経由の通知なしで直接組み立てるテストの共通土台。"""
 
