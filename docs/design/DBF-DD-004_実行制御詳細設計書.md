@@ -5,7 +5,7 @@ document_number: "DBF-DD-004"
 document_role: "normative"
 ssot_scope: "module_behavior"
 status: "draft"
-version: "1.1"
+version: "1.2"
 created_at: "2026-11-19"
 updated_at: "2026-11-20"
 author: "xzyozi"
@@ -44,6 +44,7 @@ related_documents:
 - **BDとの関係**: システム全体のアーキテクチャ方針は基本設計書（[`DBF-BD-001`](./DBF-BD-001_基本設計書.md)）を正本とし、本書はコンポーネント `C-006` を具体化する。
 - **他文書との関係**: 要求、環境、運用、テスト、ADR、レビュー文書はそれぞれの `ssot_scope` を正本とし、本書の制御仕様を上書きしない。
 - **他文書へ委譲する情報**: 品質ゲートは環境・開発基盤仕様書（[`DBF-ENV-001`](../setup/DBF-ENV-001_環境・開発基盤仕様書.md)）、テストケース・実行結果・証跡はテスト計画・結果報告書を正本とし、本書へ再掲しない。
+- **依存の向き**: `runtime/` は `contracts/`・`ports/` にだけ依存し、`core/` を import しない（BD の `C-006`）。`ProjectionRunner` と `EventDispatcher` に要求する操作（`stop`・`enter_maintenance`・`exit_maintenance`）は `runtime/collaborators.py` の Protocol（`ProjectionControl`・`SubscriberControl`）として定義し、`core/kernel.py` が `core/` の実装を注入する。本書で `ProjectionRunner` / `EventDispatcher` と記す箇所は、この Protocol を満たす実装を指す。
 - **外部公開契約**: 公開 API `set_partition_status`（`IF-006`）、`enter_maintenance`（`IF-007`）、`exit_maintenance`（`IF-008`）、`close`（`IF-010`）、および `MaintenanceHooks`（`IF-109`）の外部契約は IF/API仕様書（[`DBF-IF-001`](./DBF-IF-001_IF仕様書.md)）を正本とする。
 - **責務の対象外**: バックアップファイルの具体的なコピー手順や復旧訓練手順は運用手順書（OP）へ委譲する。
 - **矛盾時の扱い**: 文書の更新日ではなく、該当する `ssot_scope` の正本を更新し、関連文書を追従させる。
@@ -54,12 +55,12 @@ related_documents:
 
 ### 2.1 対象機能一覧
 
-| 機能ID | 関数・機能名 | 呼び出し元 | 主な呼び出し先 | 同期 / 非同期 | 冪等性 | 外部副作用 | 公開範囲 |
-| :--- | :--- | :--- | :--- | :---: | :---: | :--- | :---: |
-| F-401 | `ShardLockManager.partition_write_guard` & キャッシュ同期 | `WritePipeline` (`DBF-DD-001` `F-101`, `F-102`), `StorageKernel.set_partition_status` (`F-103`) | `LifecycleManager` 状態確認, パーティション別 `RLock`, ルーティングキャッシュ更新 | 同期（コンテキストマネージャ） | なし（ロック獲得・解放） | インメモリロック獲得とアクティブ Writer カウンタ増減 | 外部公開（`IF-006` の排他基盤） |
-| F-402 | `StorageKernel.enter_maintenance` / `MaintenanceCoordinator.enter` | 親プロジェクト運用・バックアップ機能 | `ShardLockManager` バリア待機, `ProjectionRunner.pause_or_drain`, `MaintenanceHooks.on_enter_maintenance` | 同期 | なし（重複呼び出しは `KernelMaintenanceError`） | 全更新操作の遮断と `on_enter_maintenance` フック呼び出し | 外部公開（`IF-007`） |
-| F-403 | `StorageKernel.exit_maintenance` / `MaintenanceCoordinator.exit` | 親プロジェクト運用・バックアップ機能 | `MaintenanceHooks.on_exit_maintenance`, `ShardLockManager` バリア解除, `ProjectionRunner` 再開起床 | 同期 | あり（通常運転中は無操作） | `on_exit_maintenance` フック呼び出しと更新遮断の解除 | 外部公開（`IF-008`） |
-| F-404 | `StorageKernel.close` / `LifecycleManager.shutdown` | 親プロジェクト Lifecycle 管理 | `ShardLockManager` 新規遮断・進行中待機, `ProjectionRunner.stop`, `EventDispatcher.stop` | 同期 | あり（2回目以降はキャッシュ済み `ShutdownReport` を返却） | 全ワーカースレッドの停止と残キュー破棄/ドレイン | 外部公開（`IF-010`） |
+| 機能ID | 関数・機能名                                                       | 呼び出し元                                                                                      | 主な呼び出し先                                                                                            |         同期 / 非同期          |                          冪等性                           | 外部副作用                                               |            公開範囲             |
+| :----- | :----------------------------------------------------------------- | :---------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------- | :----------------------------: | :-------------------------------------------------------: | :------------------------------------------------------- | :-----------------------------: |
+| F-401  | `ShardLockManager.partition_write_guard` & キャッシュ同期          | `WritePipeline` (`DBF-DD-001` `F-101`, `F-102`), `StorageKernel.set_partition_status` (`F-103`) | `LifecycleManager` 状態確認, パーティション別 `RLock`, ルーティングキャッシュ更新                         | 同期（コンテキストマネージャ） |                 なし（ロック獲得・解放）                  | インメモリロック獲得とアクティブ Writer カウンタ増減     | 外部公開（`IF-006` の排他基盤） |
+| F-402  | `StorageKernel.enter_maintenance` / `MaintenanceCoordinator.enter` | 親プロジェクト運用・バックアップ機能                                                            | `ShardLockManager` バリア待機, `ProjectionRunner.pause_or_drain`, `MaintenanceHooks.on_enter_maintenance` |              同期              |      なし（重複呼び出しは `KernelMaintenanceError`）      | 全更新操作の遮断と `on_enter_maintenance` フック呼び出し |      外部公開（`IF-007`）       |
+| F-403  | `StorageKernel.exit_maintenance` / `MaintenanceCoordinator.exit`   | 親プロジェクト運用・バックアップ機能                                                            | `MaintenanceHooks.on_exit_maintenance`, `ShardLockManager` バリア解除, `ProjectionRunner` 再開起床        |              同期              |                あり（通常運転中は無操作）                 | `on_exit_maintenance` フック呼び出しと更新遮断の解除     |      外部公開（`IF-008`）       |
+| F-404  | `StorageKernel.close` / `LifecycleManager.shutdown`                | 親プロジェクト Lifecycle 管理                                                                   | `ShardLockManager` 新規遮断・進行中待機, `ProjectionRunner.stop`, `EventDispatcher.stop`                  |              同期              | あり（2回目以降はキャッシュ済み `ShutdownReport` を返却） | 全ワーカースレッドの停止と残キュー破棄/ドレイン          |      外部公開（`IF-010`）       |
 
 ### 2.2 主要関数・機能の契約
 
@@ -138,14 +139,14 @@ related_documents:
 
 - **対象機能ID**: `F-401`〜`F-404`（内部 DTO `RuntimeControlState`）
 
-| フィールド | データ型 | 必須性 | NULL可 | デフォルト値 | バリデーションルール・入力制約 | 例・備考 |
-| :--- | :--- | :---: | :---: | :--- | :--- | :--- |
-| `lifecycle_phase` | `Literal["RUNNING", "MAINTENANCE_ENTERING", "MAINTENANCE", "CLOSING", "CLOSED"]` | 必須 | 不可 | `"RUNNING"` | 状態遷移図（3.1節）の遷移規則に従う | `"RUNNING"` |
-| `active_mutators` | `int` | 必須 | 不可 | `0` | `>= 0`。進行中の書き込み・状態変更トランザクション数 | `0` のときのみ静止点が成立 |
-| `partition_locks` | `dict[str, RLock]` | 必須 | 不可 | 空辞書 | `partition_key` ごとの排他ロック | グローバルロック下で遅延生成 |
-| `routing_cache` | `dict[str, PartitionInfo]` | 必須 | 不可 | 空辞書 | `partition_key` から `PartitionInfo` へのキャッシュ | `bind_shard` と `set_partition_status` で更新 |
-| `maintenance_reason` | `str \| None` | 任意 | 可 | `None` | `MAINTENANCE` 中のみ非空文字列 | `"daily_backup"` |
-| `last_shutdown_report` | `ShutdownReport \| None` | 任意 | 可 | `None` | `CLOSED` 到達後にキャッシュされるレポート | 2回目以降の `close()` で返却 |
+| フィールド             | データ型                                                                         | 必須性 | NULL可 | デフォルト値 | バリデーションルール・入力制約                       | 例・備考                                      |
+| :--------------------- | :------------------------------------------------------------------------------- | :----: | :----: | :----------- | :--------------------------------------------------- | :-------------------------------------------- |
+| `lifecycle_phase`      | `Literal["RUNNING", "MAINTENANCE_ENTERING", "MAINTENANCE", "CLOSING", "CLOSED"]` |  必須  |  不可  | `"RUNNING"`  | 状態遷移図（3.1節）の遷移規則に従う                  | `"RUNNING"`                                   |
+| `active_mutators`      | `int`                                                                            |  必須  |  不可  | `0`          | `>= 0`。進行中の書き込み・状態変更トランザクション数 | `0` のときのみ静止点が成立                    |
+| `partition_locks`      | `dict[str, RLock]`                                                               |  必須  |  不可  | 空辞書       | `partition_key` ごとの排他ロック                     | グローバルロック下で遅延生成                  |
+| `routing_cache`        | `dict[str, PartitionInfo]`                                                       |  必須  |  不可  | 空辞書       | `partition_key` から `PartitionInfo` へのキャッシュ  | `bind_shard` と `set_partition_status` で更新 |
+| `maintenance_reason`   | `str \| None`                                                                    |  任意  |   可   | `None`       | `MAINTENANCE` 中のみ非空文字列                       | `"daily_backup"`                              |
+| `last_shutdown_report` | `ShutdownReport \| None`                                                         |  任意  |   可   | `None`       | `CLOSED` 到達後にキャッシュされるレポート            | 2回目以降の `close()` で返却                  |
 
 ### 2.4 出力 DTO スキーマ・戻り値仕様
 
@@ -236,15 +237,15 @@ sequenceDiagram
   - `partition_locks[partition_key]` が保持されている間、同一 `partition_key` の状態変更と書き込みが同時に進行することはない。
 - **未定義イベントの扱い**: `MAINTENANCE` 中に `close()` が呼ばれた場合は、メンテナンス状態を終了させて `CLOSING` へ遷移し、安全にシャットダウンできるようにする。
 
-| 現在の状態 / ノード | 実行結果 / 評価フラグ | 次の状態 / ノード | 遷移判定条件・閾値ルール | 副作用・ログ / メトリクス |
-| :--- | :--- | :--- | :--- | :--- |
-| `RUNNING` | `enter_maintenance` 開始 | `MAINTENANCE_ENTERING` | 進行中トランザクションの完了待ちを開始 | 新規書き込み・状態変更・カーソル更新を `KernelMaintenanceError` で遮断 |
-| `MAINTENANCE_ENTERING` | 静止完了 & フック成功 | `MAINTENANCE` | `timeout` 内に `active_mutators == 0` & Projection 静止 & `on_enter_maintenance` 完了 | バックアップ整合点が確立 |
-| `MAINTENANCE_ENTERING` | 待機タイムアウト / フック例外 | `RUNNING` | 経過時間 `> timeout` または `on_enter_maintenance` が例外送出 | 遮断を解除して通常運転へ戻し、`TimeoutError` または元例外を送出 |
-| `MAINTENANCE` | `exit_maintenance` 完了 | `RUNNING` | `on_exit_maintenance()` を呼び出し完了 | 遮断を解除し、`ProjectionRunner` を起床させる |
-| `RUNNING` / `MAINTENANCE` | `close()` 開始 | `CLOSING` | シャットダウン要求 | 新規書き込み等を `KernelClosedError` で即座に拒否 |
-| `CLOSING` | 段階的停止完了（または timeout） | `CLOSED` | ①書き込み完了待機 → ②Projection停止 → ③Subscriber停止 | `ShutdownReport` を生成・キャッシュして返却 |
-| `CLOSED` | 2回目以降の `close()` | `CLOSED` | 既に停止完了済み | キャッシュ済みの `ShutdownReport` を即座に返却 |
+| 現在の状態 / ノード       | 実行結果 / 評価フラグ            | 次の状態 / ノード      | 遷移判定条件・閾値ルール                                                              | 副作用・ログ / メトリクス                                              |
+| :------------------------ | :------------------------------- | :--------------------- | :------------------------------------------------------------------------------------ | :--------------------------------------------------------------------- |
+| `RUNNING`                 | `enter_maintenance` 開始         | `MAINTENANCE_ENTERING` | 進行中トランザクションの完了待ちを開始                                                | 新規書き込み・状態変更・カーソル更新を `KernelMaintenanceError` で遮断 |
+| `MAINTENANCE_ENTERING`    | 静止完了 & フック成功            | `MAINTENANCE`          | `timeout` 内に `active_mutators == 0` & Projection 静止 & `on_enter_maintenance` 完了 | バックアップ整合点が確立                                               |
+| `MAINTENANCE_ENTERING`    | 待機タイムアウト / フック例外    | `RUNNING`              | 経過時間 `> timeout` または `on_enter_maintenance` が例外送出                         | 遮断を解除して通常運転へ戻し、`TimeoutError` または元例外を送出        |
+| `MAINTENANCE`             | `exit_maintenance` 完了          | `RUNNING`              | `on_exit_maintenance()` を呼び出し完了                                                | 遮断を解除し、`ProjectionRunner` を起床させる                          |
+| `RUNNING` / `MAINTENANCE` | `close()` 開始                   | `CLOSING`              | シャットダウン要求                                                                    | 新規書き込み等を `KernelClosedError` で即座に拒否                      |
+| `CLOSING`                 | 段階的停止完了（または timeout） | `CLOSED`               | ①書き込み完了待機 → ②Projection停止 → ③Subscriber停止                                 | `ShutdownReport` を生成・キャッシュして返却                            |
+| `CLOSED`                  | 2回目以降の `close()`            | `CLOSED`               | 既に停止完了済み                                                                      | キャッシュ済みの `ShutdownReport` を即座に返却                         |
 
 ---
 
@@ -252,12 +253,12 @@ sequenceDiagram
 
 ### 4.1 エラー分類と対処方針
 
-| エラーコード / 例外型 | エラーカテゴリ | 発生・判定基準 | 再試行上限 | 再試行安全条件 | 終端ステータス | 利用者・運用者対応 | 副作用・データ保持契約 |
-| :--- | :--- | :--- | :---: | :--- | :--- | :--- | :--- |
-| `PartitionStateConflictError` | 楽観ロック（CAS）競合 | `set_partition_status` の `expected_status` が現在の `status` と不一致 | 条件付き | 最新状態を `MetaDAOPort.get_partition` 等で確認した上で再実行 | 状態変更拒否 | 他のスレッドによる状態変更を確認する | パーティションの `status` とキャッシュは変更前の値を維持 |
-| `KernelMaintenanceError` | メンテナンス中遮断 | `MAINTENANCE_ENTERING` または `MAINTENANCE` 中に書き込み・パーティション作成・状態変更・カーソル更新（または二重の `enter_maintenance`）を呼び出し | 呼び出し側制御 | `exit_maintenance()` 完了後に再実行 | 操作拒否 | メンテナンスモードの終了を待つ | バックアップ中の DB ファイルへの書き込み混入を完全に防ぐ |
-| `TimeoutError`（メンテナンス移行） | 静止待機タイムアウト | `enter_maintenance` で `timeout` 秒以内に進行中トランザクションまたは Projection ドレインが終わらない | 可 | トランザクション負荷が下がってから、または `timeout` を延ばして再実行 | `RUNNING` へ自動復帰 | 長時間ロックを保持している DAO トランザクションや Projection を確認する | 自動的に `RUNNING` に戻るためデッドロックや恒久遮断にはならない |
-| `KernelClosedError` | シャットダウン後拒否 | `CLOSING` または `CLOSED` 状態で更新系・登録系 API を呼び出し | 0回（不可） | なし | 操作拒否 | プロセス終了処理中として呼び出しを止める | 進行中だった書き込みの完了後は一切のデータ変更が起きない |
+| エラーコード / 例外型              | エラーカテゴリ        | 発生・判定基準                                                                                                                                     |   再試行上限   | 再試行安全条件                                                        | 終端ステータス       | 利用者・運用者対応                                                      | 副作用・データ保持契約                                          |
+| :--------------------------------- | :-------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- | :------------: | :-------------------------------------------------------------------- | :------------------- | :---------------------------------------------------------------------- | :-------------------------------------------------------------- |
+| `PartitionStateConflictError`      | 楽観ロック（CAS）競合 | `set_partition_status` の `expected_status` が現在の `status` と不一致                                                                             |    条件付き    | 最新状態を `MetaDAOPort.get_partition` 等で確認した上で再実行         | 状態変更拒否         | 他のスレッドによる状態変更を確認する                                    | パーティションの `status` とキャッシュは変更前の値を維持        |
+| `KernelMaintenanceError`           | メンテナンス中遮断    | `MAINTENANCE_ENTERING` または `MAINTENANCE` 中に書き込み・パーティション作成・状態変更・カーソル更新（または二重の `enter_maintenance`）を呼び出し | 呼び出し側制御 | `exit_maintenance()` 完了後に再実行                                   | 操作拒否             | メンテナンスモードの終了を待つ                                          | バックアップ中の DB ファイルへの書き込み混入を完全に防ぐ        |
+| `TimeoutError`（メンテナンス移行） | 静止待機タイムアウト  | `enter_maintenance` で `timeout` 秒以内に進行中トランザクションまたは Projection ドレインが終わらない                                              |       可       | トランザクション負荷が下がってから、または `timeout` を延ばして再実行 | `RUNNING` へ自動復帰 | 長時間ロックを保持している DAO トランザクションや Projection を確認する | 自動的に `RUNNING` に戻るためデッドロックや恒久遮断にはならない |
+| `KernelClosedError`                | シャットダウン後拒否  | `CLOSING` または `CLOSED` 状態で更新系・登録系 API を呼び出し                                                                                      |  0回（不可）   | なし                                                                  | 操作拒否             | プロセス終了処理中として呼び出しを止める                                | 進行中だった書き込みの完了後は一切のデータ変更が起きない        |
 
 ---
 
@@ -267,14 +268,14 @@ sequenceDiagram
 
 ### 5.1 機能テスト要件一覧
 
-| 要件ID | 対象機能ID | 保証すべき振る舞い・条件 | 検証観点 | 対応テストケース |
-| :--- | :--- | :--- | :--- | :--- |
-| TR-DD4-001 | F-401 | **状態遷移と `append` の並行競合防止**: `set_partition_status(partition_key, "read_only")` と `append(partition_key, ...)` を複数スレッドから並行に実行しても、`read_only` への遷移が完了した後に書き込みが成功することが一切ないこと（Issue #3 C5） | 並行性 / 排他制御 | `tests/unit/test_concurrency.py::test_concurrent_status_transition_to_read_only_prevents_subsequent_writes` |
-| TR-DD4-002 | F-402 / F-403 | **メンテナンスモードの遮断と進行中トランザクション待機**: `enter_maintenance` 中の書き込み・状態変更・カーソル更新が `KernelMaintenanceError` で拒否され、開始前に進行中だったトランザクションがすべて完了した後に `MaintenanceHooks.on_enter_maintenance` が呼ばれ、`exit_maintenance` 後に通常運転へ戻ること（Issue #4 D2） | 正常 / 異常 / 排他制御 | `tests/unit/test_maintenance.py::test_maintenance_mode_blocks_writes_and_waits_for_in_flight_transactions` |
-| TR-DD4-003 | F-404 | **`close()` 開始後の新規書き込み拒否と進行中書き込みの完了保証**: `close()` 開始後に呼ばれた `append` が即座に `KernelClosedError` になり、開始時点で進行中だった `write_transaction` は中断されずに COMMIT まで完了してから停止し、`ShutdownReport` が返ること（Issue #3 C4） | 正常 / 異常 / ライフサイクル | `tests/unit/test_lifecycle.py::test_close_rejects_new_writes_and_completes_in_flight_writes` |
-| TR-DD4-004 | F-404 | **`close()` のドレインオプションとタイムアウト制御**: `drain_projections=True` / `drain_subscribers=True` 指定時にキュー処理完了を待ち、タイムアウト超過時はハングアップせず `completed_cleanly=False` と未処理件数を記録した `ShutdownReport` を返すこと（Issue #3 C4） | 境界 / タイムアウト | `tests/unit/test_lifecycle.py::test_close_drain_options_and_timeout_report` |
-| TR-DD4-005 | F-401 / F-402 / F-404 | **`resume_projection` の競合防止と close 後の拒否**: `resume_projection(skip_current=True)` のカーソル更新中に `enter_maintenance` が始まっても、更新が完了するまでメンテナンスの整合点（`on_enter_maintenance`）が確立されず、確立後にカーソルが進まないこと。`close()` 後は `skip_current` の値に関わらず `KernelClosedError` になること（Issue #40） | 並行性 / 排他制御 / ライフサイクル | `tests/unit/test_api_consistency.py::TestResumeProjectionConsistency` |
-| TR-DD4-006 | F-402 | **メンテナンス中の `subscribe` / `register_projection`**: メンテナンス中でも `subscribe` は成功し、解除後に配信を受け取れること。`register_projection` は `KernelMaintenanceError` で拒否され、`exit_maintenance` 後に成功すること。`close()` 後の `subscribe` は `KernelClosedError` になること（Issue #40） | 正常 / 異常 / 排他制御 | `tests/unit/test_api_consistency.py::TestMaintenanceSubscribeAndRegister` |
+| 要件ID     | 対象機能ID            | 保証すべき振る舞い・条件                                                                                                                                                                                                                                                                                                                                | 検証観点                           | 対応テストケース                                                                                            |
+| :--------- | :-------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :--------------------------------- | :---------------------------------------------------------------------------------------------------------- |
+| TR-DD4-001 | F-401                 | **状態遷移と `append` の並行競合防止**: `set_partition_status(partition_key, "read_only")` と `append(partition_key, ...)` を複数スレッドから並行に実行しても、`read_only` への遷移が完了した後に書き込みが成功することが一切ないこと（Issue #3 C5）                                                                                                    | 並行性 / 排他制御                  | `tests/unit/test_concurrency.py::test_concurrent_status_transition_to_read_only_prevents_subsequent_writes` |
+| TR-DD4-002 | F-402 / F-403         | **メンテナンスモードの遮断と進行中トランザクション待機**: `enter_maintenance` 中の書き込み・状態変更・カーソル更新が `KernelMaintenanceError` で拒否され、開始前に進行中だったトランザクションがすべて完了した後に `MaintenanceHooks.on_enter_maintenance` が呼ばれ、`exit_maintenance` 後に通常運転へ戻ること（Issue #4 D2）                           | 正常 / 異常 / 排他制御             | `tests/unit/test_maintenance.py::test_maintenance_mode_blocks_writes_and_waits_for_in_flight_transactions`  |
+| TR-DD4-003 | F-404                 | **`close()` 開始後の新規書き込み拒否と進行中書き込みの完了保証**: `close()` 開始後に呼ばれた `append` が即座に `KernelClosedError` になり、開始時点で進行中だった `write_transaction` は中断されずに COMMIT まで完了してから停止し、`ShutdownReport` が返ること（Issue #3 C4）                                                                          | 正常 / 異常 / ライフサイクル       | `tests/unit/test_lifecycle.py::test_close_rejects_new_writes_and_completes_in_flight_writes`                |
+| TR-DD4-004 | F-404                 | **`close()` のドレインオプションとタイムアウト制御**: `drain_projections=True` / `drain_subscribers=True` 指定時にキュー処理完了を待ち、タイムアウト超過時はハングアップせず `completed_cleanly=False` と未処理件数を記録した `ShutdownReport` を返すこと（Issue #3 C4）                                                                                | 境界 / タイムアウト                | `tests/unit/test_lifecycle.py::test_close_drain_options_and_timeout_report`                                 |
+| TR-DD4-005 | F-401 / F-402 / F-404 | **`resume_projection` の競合防止と close 後の拒否**: `resume_projection(skip_current=True)` のカーソル更新中に `enter_maintenance` が始まっても、更新が完了するまでメンテナンスの整合点（`on_enter_maintenance`）が確立されず、確立後にカーソルが進まないこと。`close()` 後は `skip_current` の値に関わらず `KernelClosedError` になること（Issue #40） | 並行性 / 排他制御 / ライフサイクル | `tests/unit/test_api_consistency.py::TestResumeProjectionConsistency`                                       |
+| TR-DD4-006 | F-402                 | **メンテナンス中の `subscribe` / `register_projection`**: メンテナンス中でも `subscribe` は成功し、解除後に配信を受け取れること。`register_projection` は `KernelMaintenanceError` で拒否され、`exit_maintenance` 後に成功すること。`close()` 後の `subscribe` は `KernelClosedError` になること（Issue #40）                                           | 正常 / 異常 / 排他制御             | `tests/unit/test_api_consistency.py::TestMaintenanceSubscribeAndRegister`                                   |
 
 ### 5.2 適用する品質ゲート
 
@@ -302,7 +303,8 @@ sequenceDiagram
 
 ## 7. 改訂履歴 (Change Log)
 
-| 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                              |
-| :------ | :--------- | :----- | :-------------------------------------------------------------------- |
-| Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #15 に基づき実行制御 runtime/concurrency, maintenance, lifecycle の詳細設計を制定） |
+| 版数    | 改訂日     | 変更者 | 変更内容・変更理由 (Why)                                                                                                                                                                                                    |
+| :------ | :--------- | :----- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #15 に基づき実行制御 runtime/concurrency, maintenance, lifecycle の詳細設計を制定）                                                                                                                         |
 | Rev.1.1 | 2026-11-20 | xzyozi | `resume_projection(skip_current=True)` を `partition_write_guard` 内で行う契約、メンテナンス中の `subscribe`（許可）と `register_projection`（拒否）の扱い、close 後の拒否を明記し、`TR-DD4-005`・`006` を追加（Issue #40） |
+| Rev.1.2 | 2026-11-20 | xzyozi | Issue #37 に基づき runtime から core への依存を解消し、`runtime/collaborators.py` の Protocol 経由で注入する旨を追記                                                                                                        |

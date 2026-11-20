@@ -64,7 +64,7 @@ class TestDependencyBoundary(unittest.TestCase):
             "contracts": {"ports", "core", "runtime", "testing", "contrib"},
             "ports": {"core", "runtime", "testing", "contrib"},
             "core": {"testing", "contrib"},
-            "runtime": {"testing", "contrib"},
+            "runtime": {"core", "testing", "contrib"},
             "testing": {"contrib"},
         }
         violations: list[str] = []
