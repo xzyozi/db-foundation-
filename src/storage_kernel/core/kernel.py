@@ -198,8 +198,11 @@ class StorageKernel(Generic[T]):
         drop_policy: DropPolicy = "drop_newest",
         on_error: Callable[[RecordEnvelope[T], Exception], None] | None = None,
     ) -> SubscriptionHandle:
-        """At-Most-Once の非同期購読を登録する（IF-003 / F-201）。"""
-        self._lock_manager.check_mutable_state()
+        """At-Most-Once の非同期購読を登録する（IF-003 / F-201）。
+
+        購読は永続状態を変えないため、メンテナンス中でも登録できる（close 後は拒否する）。
+        """
+        self._check_not_closed()
         return self._event_dispatcher.subscribe(
             pattern,
             cast(Callable[[RecordEnvelope[object]], None], callback),

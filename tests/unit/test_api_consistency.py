@@ -132,5 +132,38 @@ class TestResumeProjectionConsistency(_ApiTestBase):
         self.assertEqual(self.meta.get_cursor("c1", "r:1"), 0)
 
 
+class TestMaintenanceSubscribeAndRegister(_ApiTestBase):
+    """TR-DD4-006: メンテナンス中の subscribe は許可、register_projection は拒否。"""
+
+    def test_subscribe_allowed_but_register_projection_rejected_during_maintenance(self) -> None:
+        self.kernel.enter_maintenance("backup", timeout=1.0)
+
+        handle = self.kernel.subscribe("r:*", lambda env: None)
+        self.assertTrue(handle.is_active)
+        handle.unsubscribe()
+
+        with self.assertRaises(KernelMaintenanceError):
+            self.kernel.register_projection(InMemoryProjection[dict[str, Any]]("c2"))
+
+        self.kernel.exit_maintenance()
+        self.kernel.register_projection(InMemoryProjection[dict[str, Any]]("c2"))
+
+    def test_subscription_made_during_maintenance_receives_events_after_exit(self) -> None:
+        self.kernel.enter_maintenance("backup", timeout=1.0)
+        received: list[int] = []
+        self.kernel.subscribe("r:*", lambda env: received.append(env.seq))
+        self.kernel.exit_maintenance()
+
+        self.kernel.append("r:1", "tick", {"n": 2}, "idem-2", schema_version=1)
+
+        self.assertTrue(_wait_until(lambda: received == [2]))
+
+    def test_subscribe_after_close_raises_kernel_closed_error(self) -> None:
+        self.kernel.close()
+
+        with self.assertRaises(KernelClosedError):
+            self.kernel.subscribe("*", lambda env: None)
+
+
 if __name__ == "__main__":
     unittest.main()
