@@ -6,6 +6,7 @@ from collections import deque
 from collections.abc import Callable
 import logging
 import threading
+import time
 import uuid
 
 from ..contracts.envelope import (
@@ -118,9 +119,8 @@ class _SubscriberSlot(SubscriptionHandle):
 
             self._dropped_count += 1
             dropped_now = self._dropped_count
-            if self._drop_policy == "drop_newest":
-                pass
-            elif self._drop_policy == "drop_oldest":
+            # drop_newest は新規イベントを捨てるだけでキューを変更しないため、ここでは何もしない。
+            if self._drop_policy == "drop_oldest":
                 self._queue.popleft()
                 self._queue.append(envelope)
             elif self._drop_policy == "disconnect":
@@ -153,8 +153,6 @@ class _SubscriberSlot(SubscriptionHandle):
 
     def stop(self, *, drain: bool, deadline: float) -> tuple[int, bool]:
         """購読ワーカーを停止し、(破棄件数, タイムアウト内に完了したか) を返す。"""
-        import time
-
         dropped_on_stop = 0
         with self._cond:
             self._closed = True
@@ -277,8 +275,6 @@ class EventDispatcher:
 
     def stop(self, *, drain: bool = False, deadline: float | None = None) -> tuple[int, bool]:
         """全購読ワーカーを停止し、(破棄件数合計, 全件クリーン完了) を返す。"""
-        import time
-
         effective_deadline = deadline if deadline is not None else time.monotonic() + 5.0
         with self._lock:
             slots = list(self._slots)
