@@ -9,7 +9,7 @@ version = "1.0.0"
 description = "Zero-dependency Python storage and sync kernel using Ports and Adapters"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 
 # 必須のパッケージ
 dependencies = [
@@ -68,7 +68,7 @@ force-sort-within-sections = true
 # Type Checker (Mypy)
 # ==========================================
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.12"
 # 基本的に厳しめの設定（Strict）にしておくのがモダンな手法
 warn_unused_configs = true
 warn_redundant_casts = true

@@ -43,6 +43,10 @@
 
 ## [未リリース]
 
+### 変更
+
+- 対応する Python を `>=3.12` に変更（`pyproject.toml` の `requires-python`、mypy の `python_version`）。CI が 3.12 のみで、`>=3.10` と宣言していた 3.10・3.11 は検証していなかったため、宣言を検証できている範囲に揃えた（Issue #55）。3.10・3.11 で使っていた場合は、このバージョン以降は非対応になる。
+
 ### 修正
 
 - `DBF-DD-004`（Rev.1.4）: F-402 の呼び出し先に残っていた実在しない名前 `ProjectionRunner.pause_or_drain` を、実装のメソッド名 `ProjectionRunner.enter_maintenance` に修正
