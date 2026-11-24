@@ -5,7 +5,7 @@ document_number: "DBF-BD-001"
 document_role: "normative"
 ssot_scope: "system_architecture"
 status: "approved"
-version: "1.3"
+version: "1.4"
 created_at: "2026-11-19"
 updated_at: "2026-11-20"
 author: "xzyozi"
@@ -53,7 +53,7 @@ related_documents:
   - **親プロジェクト（Application / Domain Modules）**: `StorageKernel` の公開 Facade を呼び出してイベントの追記・購読・同期を行う利用者であり、同時に `ports/` を満たす DAO Adapter を注入（DI）する提供者。
 - **前提・制約**:
   - **プロセスモデル**: 単一プロセス・マルチスレッド（同一メモリ空間）。`ShardLockManager` や Event Bus キューはプロセス内でのみ有効である。通常運転中に別プロセスから物理 DB ファイルへ直接読み書きしないことは、親プロジェクトが守る制約とする（例外としてメンテナンスモード中のみバックアップ目的の別プロセス読み取りを許可する）。
-  - **言語・依存・ライセンス**: Python `>=3.10`、標準ライブラリのみ（FFI 不採用）、Apache-2.0 ライセンス（[`DBF-ENV-001`](../setup/DBF-ENV-001_環境・開発基盤仕様書.md)）。
+  - **言語・依存・ライセンス**: Python `>=3.12`、標準ライブラリのみ（FFI 不採用）、Apache-2.0 ライセンス（[`DBF-ENV-001`](../setup/DBF-ENV-001_環境・開発基盤仕様書.md)）。
 - **主要な非機能要件**: 下表に記載する。
 
 | ID      | 区分                   | 要件                                              | 目標値・基準                                                                                                                                                                                                                                                                     | 測定方法・確認先                                                                                                             | 正本                                                          |
@@ -186,7 +186,7 @@ flowchart TD
 ### 3.1 実行前提環境
 
 - **対応OS**: Linux、macOS、Windows（Python 標準ライブラリが動作する環境）。
-- **ランタイム要件**: Python `>=3.10`（標準開発環境は Python `3.12`）。
+- **ランタイム要件**: Python `>=3.12`（標準開発環境も Python `3.12`）。
 - **依存管理・パッケージマネージャーの正本**: `uv` および `pyproject.toml`。詳細は環境・開発基盤仕様書（[`DBF-ENV-001`](../setup/DBF-ENV-001_環境・開発基盤仕様書.md)）を正本とする。
 - **外部依存ツール**: 本番実行時の外部依存パッケージはゼロ（標準ライブラリのみ）。
 - **実行エントリポイント**: 独立した CLI やデーモンプロセスを持たず、親プロジェクトの Composition Root（`bootstrap.py` 等）から `StorageKernel` クラスをインスタンス化して同一プロセス内で呼び出す。環境変数や外部設定ファイルの暗黙読み込みは行わず、`KernelConfig` で明示注入する。
@@ -258,3 +258,4 @@ flowchart TD
 | Rev.1.1 | 2026-11-20 | xzyozi | Issue #7 性能検証（`DBF-TEST-001`）の実測結果に基づき `NFR-001`・`NFR-002` の許容値を確定                          |
 | Rev.1.2 | 2026-11-20 | xzyozi | Issue #37 に基づき runtime から core への依存を解消し、C-004・C-006 の依存記述と §2.1 の図を実装に合わせて修正     |
 | Rev.1.3 | 2026-11-20 | xzyozi | v1.0.0 リリース準備に伴い、状態を `draft` から `approved` へ変更（実装・レビュー・性能検証を経て現在の正本とする） |
+| Rev.1.4 | 2026-11-20 | xzyozi | 対応する Python を `>=3.12` に変更（Issue #55。詳細は `DBF-ENV-001` Rev.1.4）。                                    |
