@@ -29,6 +29,10 @@ dev = [
 mutation = [
     "mutmut>=3.0.0",
 ]
+# PostgreSQL 試作 DAO 検証用（uv sync --dev --group postgres）
+postgres = [
+    "psycopg[binary]>=3.2.0",
+]
 
 # ==========================================
 # Linter & Formatter (Ruff)
