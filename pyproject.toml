@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 # プロジェクト固有の情報（ここだけ書き換えればOK）
 name = "storage-kernel"
-version = "1.0.0"
+version = "1.0.1"
 description = "Zero-dependency Python storage and sync kernel using Ports and Adapters"
 readme = "README.md"
 license = { text = "Apache-2.0" }
