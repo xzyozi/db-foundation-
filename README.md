@@ -30,7 +30,10 @@ src/storage_kernel/
 ├── runtime/       排他制御・メンテナンス・停止
 ├── testing/       In-Memory 実装・Contract Test・障害注入（検証用。本番では使わない）
 └── contrib/sqlite/  SQLite の参照 DAO 実装（core から import しない）
-examples/parent_app/  親プロジェクトの接続例
+examples/
+├── parent_app/        親プロジェクトの接続例（BLOB 保存）
+├── columnar_dao/      業務カラムへ展開して保存する DAO の例（SQLite）
+└── postgres_dao/      PostgreSQL による試作 DAO の例
 benchmarks/           性能検証のスクリプト
 tests/                unit / contract / boundary
 docs/                 設計書・ADR・運用手順・検証結果
