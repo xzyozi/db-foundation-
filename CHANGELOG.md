@@ -50,6 +50,7 @@
 ### 追加
 
 - 業務カラムへ展開して保存する DAO の例（`examples/columnar_dao`）と、その Contract Test（Issue #53）
+- PostgreSQL による試作 DAO の例（`examples/postgres_dao`）と、その Contract Test（Issue #59）
 - `DBF-IF-001` §2.5.1: ペイロードの型・`codec`・`store_raw_bytes` の組み合わせ（3 種）と選び方（Issue #54）
 
 ### 修正
