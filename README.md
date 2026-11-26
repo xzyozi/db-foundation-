@@ -3,7 +3,7 @@
 DAO（テーブル構造・SQL・DB ドライバー）を親プロジェクトへ委譲する、Python 標準ライブラリだけで動く汎用データ基盤のカーネルです。Git サブモジュールとして親プロジェクトへ組み込み、書き込み・同期・配信・版管理を統一された API で扱えます。
 
 - **対象**: 単一マシン上で、複数モジュールが協調するローカルアプリ（単一プロセス・マルチスレッド）
-- **Python**: 3.10 以上（開発環境は 3.12）
+- **Python**: 3.12 以上（CI で検証しているのは 3.12 です）
 - **外部依存**: なし（pytest・ruff・mypy などは開発用）
 - **ライセンス**: Apache-2.0（[`LICENSE`](./LICENSE)）
 
@@ -30,7 +30,10 @@ src/storage_kernel/
 ├── runtime/       排他制御・メンテナンス・停止
 ├── testing/       In-Memory 実装・Contract Test・障害注入（検証用。本番では使わない）
 └── contrib/sqlite/  SQLite の参照 DAO 実装（core から import しない）
-examples/parent_app/  親プロジェクトの接続例
+examples/
+├── parent_app/        親プロジェクトの接続例（BLOB 保存）
+├── columnar_dao/      業務カラムへ展開して保存する DAO の例（SQLite）
+└── postgres_dao/      PostgreSQL による試作 DAO の例
 benchmarks/           性能検証のスクリプト
 tests/                unit / contract / boundary
 docs/                 設計書・ADR・運用手順・検証結果

@@ -5,7 +5,7 @@ document_number: "DBF-IF-001"
 document_role: "normative"
 ssot_scope: "external_interface"
 status: "approved"
-version: "1.3"
+version: "1.4"
 created_at: "2026-11-19"
 updated_at: "2026-11-20"
 author: "xzyozi"
@@ -198,6 +198,35 @@ related_documents:
 | `store_raw_bytes`   | `bool`                      |  任意  | `False` | `True` のとき、`codec.encode` 後の `bytes` を `ShardDAOPort` へ保存し（`RecordEnvelope.payload` に `bytes` が入る）、読み出し時に `codec.decode` で `T` へ戻す。`False` のときは `T` のオブジェクトをそのまま `ShardDAOPort` へ渡す |
 
 `store_raw_bytes=True` は、ペイロードを `bytes` として保存する DAO（例: `codec=None` で組み立てた SQLite シャード DAO のように、自前でシリアライズせずに `bytes` を BLOB 列へ書く実装）と組み合わせる。DAO がオブジェクトを自分で直列化できる場合は `False`（既定）のままでよい。保存形式と DAO の型が食い違うと読み出し時にデコードできないため、`Composition Root` で DAO と同時に決める。
+
+#### 2.5.1 ペイロードの型・`codec`・`store_raw_bytes` の組み合わせ
+
+ペイロードには、次の 3 つが関わる。
+
+- **基盤の `codec`（`StorageKernel` の引数）**: ペイロード `T` を `bytes` に変換する。サイズ検査（`PayloadTooLarge`）と `payload_hash` の計算に、**必ず**使われる。
+- **`store_raw_bytes`（`StorageKernel` の引数）**: DAO へ何を渡すかを決める。`True` なら `codec.encode` 後の `bytes`、`False` なら `T` のオブジェクトそのもの。
+- **DAO 側の `codec`（DAO のコンストラクタ引数。参照実装 `SqliteShardDAO` の `codec`）**: DAO が `T` を保存するときに、自分で `bytes` へ直列化するために持つ。基盤の `codec` とは別物である。
+
+実際に使われている組み合わせは、次の 3 つである。
+
+|   #   | `store_raw_bytes` | DAO が受け取るもの                        | DAO の実装例                                                     | 向いている場合                                                                                     | 使われている場所                                                    |
+| :---: | :---------------- | :---------------------------------------- | :--------------------------------------------------------------- | :------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------ |
+|   1   | `True`            | `bytes`（基盤が `codec.encode` した結果） | `SqliteShardDAO[bytes](..., codec=None)`                         | ペイロードを BLOB として、そのまま保存したい。直列化を基盤の `codec` に一本化したい                | `examples/parent_app`、`benchmarks/`、障害注入のテスト              |
+|   2   | `False`（既定）   | `T`（ドメインオブジェクト）               | `InMemoryShardDAO`、`SqliteShardDAO(..., codec=<DAO側の codec>)` | DAO が、`T` を自分で直列化できる。あるいは、メモリ上で保持するだけでよい                           | 単体テスト、Contract Test（In-Memory・SQLite）                      |
+|   3   | `False`           | `T`（ドメインオブジェクト）               | `ColumnarShardDAO`（`examples/columnar_dao`）                    | ペイロードを**業務カラムへ展開**して保存したい。検索や集計を、ペイロードを全件読み出さずに行いたい | `examples/columnar_dao`、`tests/contract/test_columnar_contract.py` |
+
+選び方の目安は、次のとおりである。
+
+- **まず 1 を検討する**: 保存の形が、基盤の `codec` の出力（`bytes`）と同じになり、直列化の実装が 1 か所で済む。
+- **業務カラムへ展開したい、DAO が `T` の構造に依存する場合は 3**: `store_raw_bytes=False` にして、DAO が `T` を直接受け取る。この自由度は、`ColumnarShardDAO` で、Contract Test 13 項目が通ることを確認している。
+- **2 は、DAO が `T` を自前で直列化する場合**: ただし、この場合、直列化が**2 回**行われる（基盤の `codec` で、サイズ検査とハッシュのために 1 回、DAO 側で保存のために 1 回）。DAO 側の `codec` が、基盤の `codec` と異なる出力を返しても、基盤は検出しない。保存の形を DAO が決めたいときだけ選ぶ。
+
+注意点:
+
+- **組み合わせの誤りは、基盤では検出できない**。`store_raw_bytes=True` のとき、基盤は、DAO から読み出した `RecordEnvelope.payload` が `bytes` の場合にだけ `codec.decode` を呼ぶ（それ以外は、そのまま返す）。`True` なのに DAO が `bytes` 以外を返す、`False` なのに DAO が `bytes` しか扱えない、といった食い違いは、`Composition Root` で DAO と同時に決める。
+- **Upcast は、どの組み合わせでも動く**。旧版のレコードを読むとき、DAO が `bytes` を返せばそのまま、`T` を返す場合（`store_raw_bytes=False`）は、基盤が `codec.encode` で `bytes` へ変換し直してから Upcast する（`DBF-DD-003`）。
+- **`durability` とは独立**である。どの組み合わせでも、DAO が `durability`（`DurabilityLevel`）を宣言する（ADR-004）。
+- ペイロードを `bytes` に一本化する案（`store_raw_bytes` の廃止）は、DAO が業務カラムへ展開する自由度（上の 3）を狭めるため、v1 では採らない（Issue #54 の判断。案 A の現状維持）。
 
 ---
 
@@ -616,3 +645,4 @@ related_documents:
 | Rev.1.1 | 2026-11-20 | xzyozi | コンストラクタ引数（`store_raw_bytes` を含む）の節を追加し、メンテナンス中の `subscribe`（許可）・`register_projection`（拒否）、`resume_projection` の close 後の扱いを明記（Issue #40） |
 | Rev.1.2 | 2026-11-20 | xzyozi | Contract Test の表を実装と同じ強さに改訂（Issue #38）。TR-IF-010 に `projected_seqs` フックを追加し、TR-IF-002 のスキップ条件を shard/meta 別に分離、TR-IF-003〜005 の基準を強化          |
 | Rev.1.3 | 2026-11-20 | xzyozi | v1.0.0 リリース準備に伴い、状態を `draft` から `approved` へ変更（実装・レビューを経て現在の正本とする）                                                                                  |
+| Rev.1.4 | 2026-11-20 | xzyozi | §2.5.1 を追加し、ペイロードの型・`codec`・`store_raw_bytes` の組み合わせ（3 種）と選び方、注意点を明記（Issue #54 の判断: 現状維持）。                                                    |
