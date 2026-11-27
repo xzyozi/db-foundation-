@@ -43,7 +43,8 @@ docs/                 設計書・ADR・運用手順・検証結果
 
 ## 使い方
 
-親プロジェクトへの組み込み（サブモジュール、タグ固定）と DI の組み立て例は、[`examples/parent_app/README.md`](./examples/parent_app/README.md) を参照してください。
+- **サブモジュールとして組み込む手順**（追加、タグ固定、`PYTHONPATH`、更新、CI での取得）: [`docs/how-to/DBF-OP-002_サブモジュールとして組み込む手順書.md`](./docs/how-to/DBF-OP-002_サブモジュールとして組み込む手順書.md)
+- **DI の組み立て例**: [`examples/parent_app/README.md`](./examples/parent_app/README.md)
 
 ## 開発
 
@@ -76,17 +77,18 @@ node .github/scripts/validateMermaidMarkdown.mjs --all
 
 ## ドキュメント
 
-| 文書                              | 場所                                                                                                                           |
-| :-------------------------------- | :----------------------------------------------------------------------------------------------------------------------------- |
-| 基本設計書（BD）                  | [`docs/design/DBF-BD-001_基本設計書.md`](./docs/design/DBF-BD-001_基本設計書.md)                                               |
-| IF/API 仕様書（公開 API と Port） | [`docs/design/DBF-IF-001_IF仕様書.md`](./docs/design/DBF-IF-001_IF仕様書.md)                                                   |
-| データ構造仕様書（DS）            | [`docs/design/DBF-DS-001_データ構造仕様書.md`](./docs/design/DBF-DS-001_データ構造仕様書.md)                                   |
-| 詳細設計書（DD）                  | [`docs/design/`](./docs/design/)（`DBF-DD-001`〜`004`）                                                                        |
-| 判断理由（ADR）                   | [`docs/adr/`](./docs/adr/)（`ADR-002`〜`005`）                                                                                 |
-| 運用手順（バックアップと復旧）    | [`docs/how-to/DBF-OP-001_バックアップと復旧の運用手順書.md`](./docs/how-to/DBF-OP-001_バックアップと復旧の運用手順書.md)       |
-| 性能検証結果                      | [`docs/test/DBF-TEST-001_性能検証結果報告書.md`](./docs/test/DBF-TEST-001_性能検証結果報告書.md)                               |
-| 文書ガバナンス・Git Flow          | [`docs/README.md`](./docs/README.md)、[`docs/setup/git_flow_and_branch_policy.md`](./docs/setup/git_flow_and_branch_policy.md) |
-| 変更履歴                          | [`CHANGELOG.md`](./CHANGELOG.md)                                                                                               |
+| 文書                                     | 場所                                                                                                                             |
+| :--------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------- |
+| 基本設計書（BD）                         | [`docs/design/DBF-BD-001_基本設計書.md`](./docs/design/DBF-BD-001_基本設計書.md)                                                 |
+| IF/API 仕様書（公開 API と Port）        | [`docs/design/DBF-IF-001_IF仕様書.md`](./docs/design/DBF-IF-001_IF仕様書.md)                                                     |
+| データ構造仕様書（DS）                   | [`docs/design/DBF-DS-001_データ構造仕様書.md`](./docs/design/DBF-DS-001_データ構造仕様書.md)                                     |
+| 詳細設計書（DD）                         | [`docs/design/`](./docs/design/)（`DBF-DD-001`〜`004`）                                                                          |
+| 判断理由（ADR）                          | [`docs/adr/`](./docs/adr/)（`ADR-002`〜`005`）                                                                                   |
+| 運用手順（サブモジュールとして組み込む） | [`docs/how-to/DBF-OP-002_サブモジュールとして組み込む手順書.md`](./docs/how-to/DBF-OP-002_サブモジュールとして組み込む手順書.md) |
+| 運用手順（バックアップと復旧）           | [`docs/how-to/DBF-OP-001_バックアップと復旧の運用手順書.md`](./docs/how-to/DBF-OP-001_バックアップと復旧の運用手順書.md)         |
+| 性能検証結果                             | [`docs/test/DBF-TEST-001_性能検証結果報告書.md`](./docs/test/DBF-TEST-001_性能検証結果報告書.md)                                 |
+| 文書ガバナンス・Git Flow                 | [`docs/README.md`](./docs/README.md)、[`docs/setup/git_flow_and_branch_policy.md`](./docs/setup/git_flow_and_branch_policy.md)   |
+| 変更履歴                                 | [`CHANGELOG.md`](./CHANGELOG.md)                                                                                                 |
 
 ## v1 に含まないもの（v2 以降）
 
