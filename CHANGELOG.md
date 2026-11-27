@@ -2,7 +2,9 @@
 
 このファイルは、[Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) の形式に準拠し、[セマンティックバージョニング](https://semver.org/lang/ja/) に従います。`ports/` と `contracts/` の変更は Major として扱います。
 
-## [未リリース]
+## [1.0.2] - 2026-11-27
+
+コード（`src/`）、テスト、依存（`pyproject.toml` の依存・`uv.lock` の依存パッケージ）の変更はありません。ドキュメントだけのリリースです（バージョン番号の更新を除く）。
 
 ### 追加
 
