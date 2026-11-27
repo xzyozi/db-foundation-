@@ -2,15 +2,16 @@
 
 `storage_kernel` を親リポジトリへ Git サブモジュールとして組み込み、独自の Adapter と `bootstrap.py`（DI 組み立て）で接続する最小例です。
 
-## サブモジュール導入・タグ固定の手順例
+## サブモジュールとして組み込む手順
+
+追加、タグ固定、`PYTHONPATH` の設定、更新、CI での取得の手順は、運用手順書 [`DBF-OP-002`](../../docs/how-to/DBF-OP-002_サブモジュールとして組み込む手順書.md) を参照してください（この README には、手順を再掲しません）。
+
+最短の流れは、次のとおりです。
 
 ```bash
-# 1. 親プロジェクトにサブモジュールとして追加し、リリース済みタグへ固定する
 git submodule add <storage_kernelリポジトリURL> libs/storage_kernel
-git -C libs/storage_kernel checkout v1.0.0
-
-# 2. 親プロジェクトの環境へ editable またはパス参照で組み込む
-uv add --editable ./libs/storage_kernel
+git -C libs/storage_kernel checkout v<バージョン>
+export PYTHONPATH="$PWD/libs/storage_kernel/src:$PYTHONPATH"   # Windows は DBF-OP-002 を参照
 ```
 
 ## 構成
