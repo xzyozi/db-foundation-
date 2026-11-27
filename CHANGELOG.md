@@ -2,6 +2,12 @@
 
 このファイルは、[Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) の形式に準拠し、[セマンティックバージョニング](https://semver.org/lang/ja/) に従います。`ports/` と `contracts/` の変更は Major として扱います。
 
+## [未リリース]
+
+### 追加
+
+- 運用手順書 `DBF-OP-002`（サブモジュールとして組み込む手順）: 追加・タグ固定・`PYTHONPATH` での利用・更新・CI での取得。`examples/parent_app/README.md` の、未検証だった `uv add --editable` の記述を、検証済みの手順への案内に置き換えた
+
 ## [1.0.1] - 2026-11-26
 
 ### 変更
