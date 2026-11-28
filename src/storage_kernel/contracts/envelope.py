@@ -80,6 +80,16 @@ class KernelConfig:
 
 
 @dataclass(frozen=True)
+class BatchAppendItem(Generic[T]):
+    """append_batch() に渡す 1 件分の通常レコード書き込み要求。"""
+
+    record_type: str
+    payload: T
+    idempotency_key: str
+    schema_version: int
+
+
+@dataclass(frozen=True)
 class WriteAck(Generic[T]):
     """Write-Before-ACK 完了後に呼び出し元へ返す書き込み確認結果。"""
 

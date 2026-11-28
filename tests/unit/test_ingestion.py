@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from pathlib import Path
+import tempfile
 import time
 from typing import Any, Iterator
 import unittest
 
-from storage_kernel.contracts.envelope import KernelConfig, RecordEnvelope, SNAPSHOT_RECORD_TYPE
+from storage_kernel.contracts.envelope import BatchAppendItem, KernelConfig, RecordEnvelope, SNAPSHOT_RECORD_TYPE
 from storage_kernel.contracts.errors import (
     IdempotencyConflict,
+    KernelClosedError,
+    KernelMaintenanceError,
     PartitionReadOnlyError,
     PayloadTooLarge,
     ReservedRecordTypeError,
     SchemaVersionError,
 )
+from storage_kernel.contrib.sqlite import SqliteMetaDAO, SqliteShardDAO
 from storage_kernel.core.kernel import StorageKernel
 from storage_kernel.testing.memory_ports import (
     InMemoryMetaDAO,
@@ -223,6 +228,136 @@ class TestWriteIngestion(unittest.TestCase):
         self.assertEqual(second.status, "duplicate")
         self.assertEqual(second.envelope.seq, first.envelope.seq)
         self.assertEqual(len(dispatched), 1)
+
+
+class TestAppendBatch(unittest.TestCase):
+    """TR-DD1-009 〜 TR-DD1-011: append_batch() の原子性・冪等性・境界検査（Issue #64）。"""
+
+    def test_append_batch_commits_in_order_and_dispatches_events(self) -> None:
+        """TR-DD1-009: 単一トランザクションで連番採番・永続化・順序どおりの通知が行われる。"""
+        kernel, _ = _make_kernel()
+        self.addCleanup(kernel.close)
+        dispatched: list[int] = []
+        kernel._post_commit_listeners.append(lambda env, _is_snap: dispatched.append(env.seq))
+
+        acks = kernel.append_batch(
+            "order:batch-1",
+            [
+                BatchAppendItem("tick", {"n": 1}, "b-1", 1),
+                BatchAppendItem("tick", {"n": 2}, "b-2", 1),
+                BatchAppendItem("tick", {"n": 3}, "b-3", 1),
+            ],
+        )
+        self.assertEqual([(a.status, a.envelope.seq) for a in acks], [("committed", 1), ("committed", 2), ("committed", 3)])
+        self.assertEqual(dispatched, [1, 2, 3])
+        synced = kernel.sync({"order:batch-1": 0})
+        self.assertEqual([r.payload for r in synced["order:batch-1"]], [{"n": 1}, {"n": 2}, {"n": 3}])
+
+    def test_append_batch_pre_validation_rejects_entire_batch(self) -> None:
+        """TR-DD1-010: バッチ内 2 件目がサイズ超過・予約種別・版不一致なら 1 件目も書き込まれない。"""
+        kernel, store = _make_kernel(max_payload_bytes=64)
+        bad_cases = [
+            BatchAppendItem("tick", {"k": "x" * 100}, "bad-size", 1),
+            BatchAppendItem(SNAPSHOT_RECORD_TYPE, {"k": "ok"}, "bad-type", 1),
+            BatchAppendItem("tick", {"k": "ok"}, "bad-ver", 2),
+        ]
+        expected_errors: tuple[type[Exception], ...] = (PayloadTooLarge, ReservedRecordTypeError, SchemaVersionError)
+        for bad_item, exc_type in zip(bad_cases, expected_errors, strict=True):
+            with self.assertRaises(exc_type):
+                kernel.append_batch(
+                    "order:batch-pre",
+                    [BatchAppendItem("tick", {"k": "ok"}, "ok-1", 1), bad_item],
+                )
+            self.assertIsNone(kernel._meta_dao.get_partition("order:batch-pre"))
+            self.assertEqual(store.records, {})
+
+    def test_append_batch_handles_db_and_in_batch_duplicates(self) -> None:
+        """TR-DD1-011: 既存 DB・バッチ内同一冪等キーの再送は duplicate となり再配信されない。"""
+        kernel, _ = _make_kernel()
+        self.addCleanup(kernel.close)
+        dispatched: list[int] = []
+        kernel._post_commit_listeners.append(lambda env, _is_snap: dispatched.append(env.seq))
+
+        kernel.append("order:batch-dup", "tick", {"a": 1, "b": 2}, "idem-1", schema_version=1)
+        acks = kernel.append_batch(
+            "order:batch-dup",
+            [
+                BatchAppendItem("tick", {"b": 2, "a": 1}, "idem-1", 1),  # 既存 DB と一致
+                BatchAppendItem("tick", {"c": 3, "d": 4}, "idem-2", 1),  # 新規 seq=2
+                BatchAppendItem("tick", {"d": 4, "c": 3}, "idem-2", 1),  # 同一バッチ内重複
+            ],
+        )
+        self.assertEqual(
+            [(a.status, a.envelope.seq) for a in acks],
+            [("duplicate", 1), ("committed", 2), ("duplicate", 2)],
+        )
+        self.assertEqual(dispatched, [1, 2])
+        self.assertEqual([r.seq for r in kernel.sync({"order:batch-dup": 0})["order:batch-dup"]], [1, 2])
+
+    def test_append_batch_rolls_back_entire_batch_on_conflict_with_sqlite(self) -> None:
+        """TR-DD1-010/011: 後続要素で IdempotencyConflict が起きると前段の挿入と採番も巻き戻る（SQLite 実 DB）。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            kernel: StorageKernel[dict[str, Any]] = StorageKernel(
+                config=KernelConfig(schema_registry={"tick": 1}),
+                shard_dao=SqliteShardDAO(root / "shards", codec=JsonDeterministicCodec()),
+                meta_dao=SqliteMetaDAO(root / "meta.db"),
+                codec=JsonDeterministicCodec(),
+                router=SimplePartitionRouter(),
+            )
+            self.addCleanup(kernel.close)
+            dispatched: list[int] = []
+            kernel._post_commit_listeners.append(lambda env, _is_snap: dispatched.append(env.seq))
+
+            kernel.append("order:sqlite-batch", "tick", {"v": 1}, "idem-existing", schema_version=1)
+
+            # 1 件目が新規、2 件目が既存レコードと衝突 → 1 件目も seq も巻き戻る
+            with self.assertRaises(IdempotencyConflict):
+                kernel.append_batch(
+                    "order:sqlite-batch",
+                    [
+                        BatchAppendItem("tick", {"v": 2}, "idem-new-in-failing-batch", 1),
+                        BatchAppendItem("tick", {"v": 999}, "idem-existing", 1),
+                    ],
+                )
+
+            # 1 件目が新規、2 件目が同バッチ内 1 件目と衝突 → 全件巻き戻る
+            with self.assertRaises(IdempotencyConflict):
+                kernel.append_batch(
+                    "order:sqlite-batch",
+                    [
+                        BatchAppendItem("tick", {"v": 10}, "idem-self", 1),
+                        BatchAppendItem("tick", {"v": 20}, "idem-self", 1),
+                    ],
+                )
+
+            rows = kernel.sync({"order:sqlite-batch": 0})["order:sqlite-batch"]
+            self.assertEqual([(r.seq, r.payload) for r in rows], [(1, {"v": 1})])
+
+            # 次の正常書き込みが欠番なく seq=2 になること
+            next_ack = kernel.append("order:sqlite-batch", "tick", {"v": 2}, "idem-after", schema_version=1)
+            self.assertEqual(next_ack.envelope.seq, 2)
+            self.assertEqual(dispatched, [1, 2])
+
+    def test_append_batch_empty_and_lifecycle_states(self) -> None:
+        """空バッチ・read_only・メンテナンス中・close 後の境界動作を検証する。"""
+        kernel, _ = _make_kernel()
+        self.assertEqual(kernel.append_batch("order:empty", []), ())
+        self.assertIsNone(kernel._meta_dao.get_partition("order:empty"))
+
+        kernel.append("order:ro", "tick", {"v": 1}, "k1", schema_version=1)
+        kernel.set_partition_status("order:ro", "read_only")
+        with self.assertRaises(PartitionReadOnlyError):
+            kernel.append_batch("order:ro", [BatchAppendItem("tick", {"v": 2}, "k2", 1)])
+
+        kernel.enter_maintenance("backup")
+        with self.assertRaises(KernelMaintenanceError):
+            kernel.append_batch("order:empty", [])
+        kernel.exit_maintenance()
+
+        kernel.close()
+        with self.assertRaises(KernelClosedError):
+            kernel.append_batch("order:empty", [])
 
 
 if __name__ == "__main__":

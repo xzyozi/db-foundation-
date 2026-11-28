@@ -7,6 +7,7 @@ import logging
 from typing import Any, Generic, TypeVar, cast
 
 from ..contracts.envelope import (
+    BatchAppendItem,
     DropPolicy,
     KernelConfig,
     PartitionInfo,
@@ -167,6 +168,24 @@ class StorageKernel(Generic[T]):
         if result.should_dispatch_event:
             self._notify_post_commit(result.ack.envelope, result.is_snapshot)
         return result.ack
+
+    def append_batch(
+        self,
+        partition_key: str,
+        items: Sequence[BatchAppendItem[T]],
+        *,
+        preferred_shard: str | None = None,
+    ) -> tuple[WriteAck[T], ...]:
+        """同一パーティションへ複数レコードを単一トランザクションで追記する（IF-011 / F-107）。"""
+        results = self._write_pipeline.execute_append_batch(
+            partition_key,
+            items,
+            preferred_shard=preferred_shard,
+        )
+        for result in results:
+            if result.should_dispatch_event:
+                self._notify_post_commit(result.ack.envelope, result.is_snapshot)
+        return tuple(result.ack for result in results)
 
     def write_snapshot(
         self,

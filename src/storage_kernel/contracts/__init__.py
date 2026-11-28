@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .envelope import (
     SNAPSHOT_RECORD_TYPE,
+    BatchAppendItem,
     DeadLetterRecord,
     DropPolicy,
     DurabilityLevel,
@@ -33,6 +34,7 @@ from .errors import (
 from .telemetry import TelemetryEvent, TelemetrySink
 
 __all__ = [
+    "BatchAppendItem",
     "CursorExpiredError",
     "DeadLetterRecord",
     "DropPolicy",
