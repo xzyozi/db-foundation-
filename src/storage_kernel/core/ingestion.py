@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 import hashlib
 import time
@@ -10,6 +10,7 @@ from typing import Any, Generic, TypeVar, cast
 
 from ..contracts.envelope import (
     SNAPSHOT_RECORD_TYPE,
+    BatchAppendItem,
     KernelConfig,
     PartitionInfo,
     RecordEnvelope,
@@ -24,7 +25,7 @@ from ..contracts.errors import (
 )
 from ..contracts.telemetry import TelemetryEvent, TelemetrySink
 from ..ports.codec import PayloadCodec
-from ..ports.dao import MetaDAOPort, ShardDAOPort
+from ..ports.dao import MetaDAOPort, ShardDAOPort, ShardTxPort
 from ..ports.router import PartitionRouterPort
 from ..runtime.concurrency import ShardLockManager
 from .ordering import SequenceCoordinator
@@ -244,61 +245,141 @@ class WritePipeline(Generic[T]):
         )
         return self._execute_request(req)
 
-    def _execute_request(self, req: PreparedWriteRequest[T]) -> WritePipelineResult[T]:
+    def execute_append_batch(
+        self,
+        partition_key: str,
+        items: Sequence[BatchAppendItem[T]],
+        *,
+        preferred_shard: str | None = None,
+    ) -> tuple[WritePipelineResult[T], ...]:
+        """同一パーティションへの一括レコード書き込みを実行する（IF-011 / F-107）。"""
+        self._lock_manager.check_mutable_state()
+        if not partition_key:
+            raise ValueError("partition_key must be non-empty")
+        if not items:
+            return ()
+
+        reqs = [
+            self.prepare_and_hash(
+                partition_key=partition_key,
+                record_type=item.record_type,
+                payload=item.payload,
+                idempotency_key=item.idempotency_key,
+                schema_version=item.schema_version,
+                preferred_shard=preferred_shard,
+                is_snapshot=False,
+            )
+            for item in items
+        ]
+
         started_at = time.monotonic()
-        with self._lock_manager.partition_write_guard(req.partition_key):
+        with self._lock_manager.partition_write_guard(partition_key):
             info = self.resolve_and_bind_partition(
-                req.partition_key,
-                preferred_shard=req.preferred_shard,
+                partition_key,
+                preferred_shard=preferred_shard,
+            )
+            seen_in_batch: dict[str, RecordEnvelope[T]] = {}
+            results: list[WritePipelineResult[T]] = []
+            with self._shard_dao.write_transaction(info.shard_id) as tx:
+                for req in reqs:
+                    results.append(
+                        self._process_request_in_tx(
+                            tx,
+                            info.shard_id,
+                            req,
+                            seen_in_batch=seen_in_batch,
+                        )
+                    )
+
+        elapsed_ms = (time.monotonic() - started_at) * 1000.0
+        for result in results:
+            self._emit_write_telemetry(result, elapsed_ms)
+        return tuple(results)
+
+    def _emit_write_telemetry(self, result: WritePipelineResult[T], elapsed_ms: float) -> None:
+        ack = result.ack
+        if ack.status == "duplicate":
+            self._emit(
+                "write.duplicate",
+                {
+                    "partition_key": ack.envelope.partition_key,
+                    "shard_id": ack.shard_id,
+                    "seq": ack.envelope.seq,
+                    "elapsed_ms": elapsed_ms,
+                },
+            )
+        else:
+            self._emit(
+                "write.committed",
+                {
+                    "partition_key": ack.envelope.partition_key,
+                    "shard_id": ack.shard_id,
+                    "seq": ack.envelope.seq,
+                    "is_snapshot": result.is_snapshot,
+                    "elapsed_ms": elapsed_ms,
+                },
             )
 
-            with self._shard_dao.write_transaction(info.shard_id) as tx:
-                existing = tx.find_by_idempotency(req.partition_key, req.idempotency_key)
-                if existing is not None:
-                    if existing.payload_hash != req.payload_hash:
-                        raise IdempotencyConflict(
-                            req.partition_key,
-                            req.idempotency_key,
-                            existing.payload_hash,
-                            req.payload_hash,
-                        )
-                    public_existing = self._to_public_envelope(existing)
-                    ack = WriteAck(status="duplicate", shard_id=info.shard_id, envelope=public_existing)
-                    elapsed_ms = (time.monotonic() - started_at) * 1000.0
-                    self._emit(
-                        "write.duplicate",
-                        {
-                            "partition_key": req.partition_key,
-                            "shard_id": info.shard_id,
-                            "seq": existing.seq,
-                            "elapsed_ms": elapsed_ms,
-                        },
-                    )
-                    return WritePipelineResult(
-                        ack=ack,
-                        should_dispatch_event=False,
-                        is_snapshot=req.is_snapshot,
-                    )
-
-                next_seq = self._ordering.allocate_and_verify(
-                    tx,
+    def _process_request_in_tx(
+        self,
+        tx: ShardTxPort[Any],
+        shard_id: str,
+        req: PreparedWriteRequest[T],
+        *,
+        seen_in_batch: dict[str, RecordEnvelope[T]] | None = None,
+    ) -> WritePipelineResult[T]:
+        seen_env = seen_in_batch.get(req.idempotency_key) if seen_in_batch is not None else None
+        if seen_env is not None:
+            if seen_env.payload_hash != req.payload_hash:
+                raise IdempotencyConflict(
                     req.partition_key,
-                    covers_through_seq=req.covers_through_seq,
+                    req.idempotency_key,
+                    seen_env.payload_hash,
+                    req.payload_hash,
                 )
-                now = time.time()
-                stored_payload: Any = req.raw_payload if self._store_raw_bytes else req.payload
-                stored_envelope: RecordEnvelope[Any] = RecordEnvelope(
-                    partition_key=req.partition_key,
-                    seq=next_seq,
-                    idempotency_key=req.idempotency_key,
-                    record_type=req.record_type,
-                    schema_version=req.schema_version,
-                    payload_hash=req.payload_hash,
-                    payload=stored_payload,
-                    created_at=now,
-                    covers_through_seq=req.covers_through_seq,
+            return WritePipelineResult(
+                ack=WriteAck(status="duplicate", shard_id=shard_id, envelope=seen_env),
+                should_dispatch_event=False,
+                is_snapshot=req.is_snapshot,
+            )
+
+        existing = tx.find_by_idempotency(req.partition_key, req.idempotency_key)
+        if existing is not None:
+            if existing.payload_hash != req.payload_hash:
+                raise IdempotencyConflict(
+                    req.partition_key,
+                    req.idempotency_key,
+                    existing.payload_hash,
+                    req.payload_hash,
                 )
-                tx.insert_record(stored_envelope)
+            public_existing = self._to_public_envelope(existing)
+            if seen_in_batch is not None:
+                seen_in_batch[req.idempotency_key] = public_existing
+            return WritePipelineResult(
+                ack=WriteAck(status="duplicate", shard_id=shard_id, envelope=public_existing),
+                should_dispatch_event=False,
+                is_snapshot=req.is_snapshot,
+            )
+
+        next_seq = self._ordering.allocate_and_verify(
+            tx,
+            req.partition_key,
+            covers_through_seq=req.covers_through_seq,
+        )
+        now = time.time()
+        stored_payload: Any = req.raw_payload if self._store_raw_bytes else req.payload
+        stored_envelope: RecordEnvelope[Any] = RecordEnvelope(
+            partition_key=req.partition_key,
+            seq=next_seq,
+            idempotency_key=req.idempotency_key,
+            record_type=req.record_type,
+            schema_version=req.schema_version,
+            payload_hash=req.payload_hash,
+            payload=stored_payload,
+            created_at=now,
+            covers_through_seq=req.covers_through_seq,
+        )
+        tx.insert_record(stored_envelope)
 
         public_envelope = RecordEnvelope(
             partition_key=req.partition_key,
@@ -311,19 +392,25 @@ class WritePipeline(Generic[T]):
             created_at=now,
             covers_through_seq=req.covers_through_seq,
         )
-        elapsed_ms = (time.monotonic() - started_at) * 1000.0
-        self._emit(
-            "write.committed",
-            {
-                "partition_key": req.partition_key,
-                "shard_id": info.shard_id,
-                "seq": next_seq,
-                "is_snapshot": req.is_snapshot,
-                "elapsed_ms": elapsed_ms,
-            },
-        )
+        if seen_in_batch is not None:
+            seen_in_batch[req.idempotency_key] = public_envelope
         return WritePipelineResult(
-            ack=WriteAck(status="committed", shard_id=info.shard_id, envelope=public_envelope),
+            ack=WriteAck(status="committed", shard_id=shard_id, envelope=public_envelope),
             should_dispatch_event=True,
             is_snapshot=req.is_snapshot,
         )
+
+    def _execute_request(self, req: PreparedWriteRequest[T]) -> WritePipelineResult[T]:
+        started_at = time.monotonic()
+        with self._lock_manager.partition_write_guard(req.partition_key):
+            info = self.resolve_and_bind_partition(
+                req.partition_key,
+                preferred_shard=req.preferred_shard,
+            )
+
+            with self._shard_dao.write_transaction(info.shard_id) as tx:
+                result = self._process_request_in_tx(tx, info.shard_id, req)
+
+        elapsed_ms = (time.monotonic() - started_at) * 1000.0
+        self._emit_write_telemetry(result, elapsed_ms)
+        return result

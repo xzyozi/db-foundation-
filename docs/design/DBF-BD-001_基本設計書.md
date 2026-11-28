@@ -5,9 +5,9 @@ document_number: "DBF-BD-001"
 document_role: "normative"
 ssot_scope: "system_architecture"
 status: "approved"
-version: "1.4"
+version: "1.5"
 created_at: "2026-11-19"
-updated_at: "2026-11-20"
+updated_at: "2026-11-28"
 author: "xzyozi"
 owner: "xzyozi"
 purpose: "storage_kernel システム全体の目的・Ports & Adapters アーキテクチャ方針・責務境界・横断的な非機能方針を定義し、詳細設計およびDAO実装時の設計ブレを防ぐため"
@@ -41,14 +41,14 @@ related_documents:
 
 具体的なテーブル構造・SQL・DB ドライバー（DAO）はすべて親プロジェクト側へ委譲し、Ports & Adapters（ヘキサゴナルアーキテクチャ）によって基盤コアと物理ストレージを完全に分離する（[`ADR-002`](../adr/ADR-002_DAO委譲とPython標準ライブラリによる独立カーネル構成.md)）。
 
-- **対象範囲（v1）**:
-  - 公開 API（`append`, `write_snapshot`, `subscribe`, `register_projection`, `resume_projection`, `set_partition_status`, `enter_maintenance`, `exit_maintenance`, `sync`, `close`）および契約型・例外体系（`contracts/`）。
+- **対象範囲（v1 / v1.1 以降の後方互換追加を含む）**:
+  - 公開 API（`append`, `append_batch`, `write_snapshot`, `subscribe`, `register_projection`, `resume_projection`, `set_partition_status`, `enter_maintenance`, `exit_maintenance`, `sync`, `close`）および契約型・例外体系（`contracts/`）。
   - 親プロジェクトが実装する抽象 Port 群（`ShardDAOPort`, `ShardTxPort`, `MetaDAOPort`, `ProjectionPort`, `DeadLetterPort`, `PayloadCodec`, `PayloadUpcaster`, `PartitionRouterPort`, `MaintenanceHooks`）。
   - 基盤コアの制御エンジン（`core/`）および実行制御・ライフサイクル管理（`runtime/`）。
   - 親プロジェクトの DAO が不変条件（13項目）を満たすか検証する Contract Test（`testing/contract_test.py`）、In-Memory 実装（`testing/memory_ports.py`）、および SQLite 参照実装（`contrib/sqlite/`）。
 - **対象外範囲（v2 以降へ先送り、または親プロジェクトの責務）**:
   - **親プロジェクトの責務**: ドメイン固有のペイロード構造、本番用物理 DDL、サードパーティ製 DB ドライバーの管理、バックアップファイルの物理コピーと保管先管理。
-  - **v2 以降の対象（v1 対象外）**: パーティション移動（`migrating` 状態・`Migratable*Port`）、大容量データの外部退避（`BlobStorePort`）、スナップショットの自動生成と古いログの自動削除（Retention・自動 VACUUM）、バッチ書き込み（`append_batch`）、揮発データストア（`core/ephemeral.py`）、アクセス制御・レート制限（`ports/guard.py`）、プロセス間通信・別言語配信口（`ports/transport.py`）（[`ADR-005`](../adr/ADR-005_v1スコープの限定と将来拡張に向けた前方互換契約の先行定義.md)）。
+  - **v2 以降の対象（対象外）**: パーティション移動（`migrating` 状態・`Migratable*Port`）、大容量データの外部退避（`BlobStorePort`）、スナップショットの自動生成と古いログの自動削除（Retention・自動 VACUUM）、揮発データストア（`core/ephemeral.py`）、アクセス制御・レート制限（`ports/guard.py`）、プロセス間通信・別言語配信口（`ports/transport.py`）（[`ADR-005`](../adr/ADR-005_v1スコープの限定と将来拡張に向けた前方互換契約の先行定義.md)）。
 - **利用者・外部システム**:
   - **親プロジェクト（Application / Domain Modules）**: `StorageKernel` の公開 Facade を呼び出してイベントの追記・購読・同期を行う利用者であり、同時に `ports/` を満たす DAO Adapter を注入（DI）する提供者。
 - **前提・制約**:
@@ -172,7 +172,7 @@ flowchart TD
 | :--------------- | :----------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------- |
 | C-001            | `contracts/` (`envelope.py`, `errors.py`, `telemetry.py`)                                              | 基盤と親プロジェクトが共有する不変 DTO（`RecordEnvelope[T]`, `WriteAck[T]`, `PartitionInfo`, `KernelConfig`, `DeadLetterRecord[T]`, `ShutdownReport`, `SubscriptionHandle`）、標準例外体系、telemetry イベント型の定義                                            | 標準ライブラリのみに依存。全レイヤーから参照される最下層契約                                                                                                                                                           | `DBF-IF-001`（外部公開契約） / `DBF-DS-001`（論理データ構造）                                            |
 | C-002            | `ports/` (`dao.py`, `codec.py`, `router.py`, `maintenance.py`)                                         | 親プロジェクトが実装する SPI（`ShardDAOPort`, `ShardTxPort`, `MetaDAOPort`, `ProjectionPort`, `DeadLetterPort`, `PayloadCodec`, `PayloadUpcaster`, `PartitionRouterPort`, `MaintenanceHooks`）の Protocol と不変条件の定義                                        | `contracts/` および標準ライブラリのみに依存                                                                                                                                                                            | `DBF-IF-001`（外部公開契約）                                                                             |
-| C-003            | `core/kernel.py`, `core/ingestion.py`, `core/ordering.py`                                              | 公開 Facade（`StorageKernel`）、書き込みパイプライン（予約種別検査、サイズ64KB検証、`payload_hash` 算出、`bind_shard` 先行確定、単一シャードトランザクション内での冪等性確認・採番・永続化、Write-Before-ACK）、手動スナップショット書き込み                      | `contracts/`, `ports/`, `runtime/` に依存。公開 API `append`, `write_snapshot`, `set_partition_status` を提供                                                                                                          | `DBF-DD-001`（書き込み経路詳細設計書）                                                                   |
+| C-003            | `core/kernel.py`, `core/ingestion.py`, `core/ordering.py`                                              | 公開 Facade（`StorageKernel`）、書き込みパイプライン（予約種別検査、サイズ64KB検証、`payload_hash` 算出、`bind_shard` 先行確定、単一シャードトランザクション内での冪等性確認・採番・永続化、Write-Before-ACK）、一括書き込み、手動スナップショット書き込み | `contracts/`, `ports/`, `runtime/` に依存。公開 API `append`, `append_batch`, `write_snapshot`, `set_partition_status` を提供 | `DBF-DD-001`（書き込み経路詳細設計書） |
 | C-004            | `core/event_bus.py`, `core/projection.py`, `core/reliability.py`                                       | パターンマッチ（完全一致・`*`・末尾ワイルドカード）、購読者別有界キューと `drop_policy` による At-Most-Once 通知、Dirty Set と `fetch_range` による At-Least-Once 追いつき投影、指数バックオフ再試行、Poison Pill 単件特定、DLQ隔離・パーティション一時停止と再開 | `contracts/`, `ports/` および `core/` 内の `event_bus.py`・`reliability.py` に依存（`runtime/` には依存しない）。公開 API `subscribe`, `register_projection`, `resume_projection` を提供                               | `DBF-DD-002`（配信とProjection詳細設計書）                                                               |
 | C-005            | `core/sync_engine.py`                                                                                  | `{partition_key: last_seen_seq}` カーソルマップに基づく複数シャード横断の Scatter-Gather 差分取得、`PayloadUpcaster` による読み取り時バイト列 Upcast（1版ずつ変換）とデコード、スキーマ版整合性検証                                                               | `contracts/`, `ports/` に依存。公開 API `sync` を提供                                                                                                                                                                  | `DBF-DD-003`（同期と版管理詳細設計書）                                                                   |
 | C-006            | `runtime/concurrency.py`, `runtime/maintenance.py`, `runtime/lifecycle.py`, `runtime/collaborators.py` | パーティション単位ロックによる書き込みと状態変更（`active`/`read_only`）の競合防止、ルーティングキャッシュ管理、メンテナンスモード（新規更新遮断・進行中Tx待機・フック呼び出し）、`close()` の段階的グレースフルシャットダウン                                    | `contracts/`, `ports/` にだけ依存し、`core/` を import しない（Projection・Subscriber の停止と静止は `collaborators.py` の Protocol 経由）。公開 API `enter_maintenance`, `exit_maintenance`, `close` を支える実行制御 | `DBF-DD-004`（実行制御詳細設計書）                                                                       |
@@ -259,3 +259,4 @@ flowchart TD
 | Rev.1.2 | 2026-11-20 | xzyozi | Issue #37 に基づき runtime から core への依存を解消し、C-004・C-006 の依存記述と §2.1 の図を実装に合わせて修正     |
 | Rev.1.3 | 2026-11-20 | xzyozi | v1.0.0 リリース準備に伴い、状態を `draft` から `approved` へ変更（実装・レビュー・性能検証を経て現在の正本とする） |
 | Rev.1.4 | 2026-11-20 | xzyozi | 対応する Python を `>=3.12` に変更（Issue #55。詳細は `DBF-ENV-001` Rev.1.4）。                                    |
+| Rev.1.5 | 2026-11-28 | xzyozi | 同一パーティション向け一括書き込み API `append_batch` を対象範囲・`C-003` に追加（Issue #64）                      |

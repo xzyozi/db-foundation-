@@ -11,7 +11,7 @@ DAO（テーブル構造・SQL・DB ドライバー）を親プロジェクト�
 
 | 機能               | 内容                                                                                                                |
 | :----------------- | :------------------------------------------------------------------------------------------------------------------ |
-| 追記専用の書き込み | `append`。冪等キー（`payload_hash` の一致確認）、パーティション単位の単調増加 `seq`、書き込み確定後に ACK           |
+| 追記専用の書き込み | `append` / `append_batch`。冪等キー（`payload_hash` の一致確認）、パーティション単位の単調増加 `seq`、書き込み確定後に ACK |
 | 差分同期           | `sync`。カーソルからの差分を、複数シャードを横断して取得。読み取り時に Upcast を適用                                |
 | 配信               | `subscribe`（取りこぼしを許容する通知）、`register_projection`（取りこぼさない投影。リトライ、DLQ、一時停止と再開） |
 | スナップショット   | `write_snapshot`（親が作った内容を `__snapshot__` として保存。自動生成と Retention は v2）                          |
@@ -92,4 +92,4 @@ node .github/scripts/validateMermaidMarkdown.mjs --all
 
 ## v1 に含まないもの（v2 以降）
 
-パーティション移動、大容量ペイロードの退避（`BlobStorePort`）、スナップショットの自動生成と Retention、`append_batch()`、複数プロセス・IPC 対応、`ephemeral`・`guard`。
+パーティション移動、大容量ペイロードの退避（`BlobStorePort`）、スナップショットの自動生成と Retention、複数プロセス・IPC 対応、`ephemeral`・`guard`。

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .contracts import (
     SNAPSHOT_RECORD_TYPE,
+    BatchAppendItem,
     CursorExpiredError,
     DeadLetterRecord,
     DropPolicy,
@@ -44,6 +45,7 @@ from .ports import (
 )
 
 __all__ = [
+    "BatchAppendItem",
     "CursorExpiredError",
     "DeadLetterPort",
     "DeadLetterRecord",
