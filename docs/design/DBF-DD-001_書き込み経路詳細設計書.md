@@ -5,9 +5,9 @@ document_number: "DBF-DD-001"
 document_role: "normative"
 ssot_scope: "module_behavior"
 status: "approved"
-version: "1.1"
+version: "1.2"
 created_at: "2026-11-19"
-updated_at: "2026-11-20"
+updated_at: "2026-11-28"
 author: "xzyozi"
 owner: "xzyozi"
 purpose: "core/kernel.py、core/ingestion.py、core/ordering.py における書き込み経路（予約種別・状態・サイズ検査、payload_hash算出、bind_shard先行、冪等性確認、連番採番、Write-Before-ACK、手動スナップショット）の内部DTO、制御フロー、状態遷移、および機能テスト要件を定義するため"
@@ -30,18 +30,18 @@ related_documents:
 
 ### 1.1 モジュールの目的
 
-本モジュール群（`core/kernel.py` の書き込み系エントリポイント、`core/ingestion.py` の `WritePipeline`、`core/ordering.py` の `SequenceCoordinator`）は、親プロジェクトから要求されたレコード追記（`append`）、手動スナップショット保存（`write_snapshot`）、およびパーティション状態変更（`set_partition_status`）を制御する。
+本モジュール群（`core/kernel.py` の書き込み系エントリポイント、`core/ingestion.py` の `WritePipeline`、`core/ordering.py` の `SequenceCoordinator`）は、親プロジェクトから要求されたレコード追記（`append`）、一括書き込み（`append_batch`）、手動スナップショット保存（`write_snapshot`）、およびパーティション状態変更（`set_partition_status`）を制御する。
 
 具体的には、システム予約種別（`"__"` 始まり）の保護、スキーマ版の一致確認、64 KB ペイロードサイズ上限検査、長さプレフィックス付き SHA-256 による `payload_hash` の決定論的算出、2PC を用いない `MetaDAOPort.bind_shard` の先行確定、パーティション単位ロック下での状態（`active` / `read_only`）確認、単一シャード `write_transaction` 内での「冪等性確認 → 単調増加採番 → 永続化（Write-Before-ACK）」、および COMMIT 完了後の非同期配信レーンへの投入を担う。
 
 ### 1.2 単一責任範囲 (SSOT) とデータ境界
 
-- **本書の正本範囲**: `module_behavior`。書き込み経路（`core/kernel.py`, `core/ingestion.py`, `core/ordering.py`）の関数呼び出し順序、内部 DTO、制御フロー、状態遷移、エラー処理契約、および機能テスト要件（`TR-DD1-001`〜`008`）の正本とする。
+- **本書の正本範囲**: `module_behavior`。書き込み経路（`core/kernel.py`, `core/ingestion.py`, `core/ordering.py`）の関数呼び出し順序、内部 DTO、制御フロー、状態遷移、エラー処理契約、および機能テスト要件（`TR-DD1-001`〜`011`）の正本とする。
 - **データ境界 (DTO vs DAO)**: 本書は書き込みパイプライン内部で受け渡す DTO（`PreparedWriteRequest[T]`, `SequenceCheckResult` 等）を管理する。ストレージ永続化スキーマと不変条件はデータ構造仕様書（[`DBF-DS-001`](./DBF-DS-001_データ構造仕様書.md)）を参照する。
 - **BDとの関係**: システム全体のアーキテクチャ境界と非機能方針は基本設計書（[`DBF-BD-001`](./DBF-BD-001_基本設計書.md)）を正本とし、本書はコンポーネント `C-003` を機能単位へ具体化する。
 - **他文書との関係**: 要求、環境、運用、テスト、ADR、レビュー文書はそれぞれの `ssot_scope` を正本とし、本書の制御仕様を上書きしない。
 - **他文書へ委譲する情報**: 品質ゲート（静的解析・型検査・テストの実行条件と合格基準）は環境・開発基盤仕様書（[`DBF-ENV-001`](../setup/DBF-ENV-001_環境・開発基盤仕様書.md)）、テストケース・実行結果・証跡はテスト計画・結果報告書を正本とし、本書へ再掲しない。
-- **外部公開契約**: 親プロジェクト向けの公開 API シグネチャと Port 契約は IF/API仕様書（[`DBF-IF-001`](./DBF-IF-001_IF仕様書.md)）を正本とし、本書 2.1 節の対象機能一覧にて公開範囲を「外部公開」とした機能は IF-ID（`IF-001`, `IF-002`, `IF-006`）で対応付ける。
+- **外部公開契約**: 親プロジェクト向けの公開 API シグネチャと Port 契約は IF/API仕様書（[`DBF-IF-001`](./DBF-IF-001_IF仕様書.md)）を正本とし、本書 2.1 節の対象機能一覧にて公開範囲を「外部公開」とした機能は IF-ID（`IF-001`, `IF-002`, `IF-006`, `IF-011`）で対応付ける。
 - **責務の対象外**: COMMIT 完了後の `EventDispatcher` / `ProjectionRunner` 内部のキュー配送・リトライ制御は `DBF-DD-002`、パーティションロックやメンテナンスバリアの排他機構そのものは `DBF-DD-004` へ委譲する。
 - **矛盾時の扱い**: 文書の更新日ではなく、該当する `ssot_scope` の正本を更新し、関連文書を追従させる。
 
@@ -56,9 +56,10 @@ related_documents:
 | F-101  | `StorageKernel.append` / `WritePipeline.execute_append`           | 親プロジェクト業務モジュール | `F-104`, `ShardLockManager`, `F-105`, `ShardDAOPort.write_transaction`, `F-106`, `EventDispatcher`, `ProjectionRunner` |     同期      | あり（同一冪等キー・同一ハッシュ時）  | `MetaDAOPort.bind_shard`, `ShardTxPort.insert_record`, 配信キュー投入 | 外部公開（`IF-001`） |
 | F-102  | `StorageKernel.write_snapshot` / `WritePipeline.execute_snapshot` | 親プロジェクト業務モジュール | `F-104`, `ShardLockManager`, `F-105`, `ShardDAOPort.write_transaction`, `F-106`, `ProjectionRunner`                    |     同期      | あり（同一冪等キー・同一ハッシュ時）  | `ShardTxPort.insert_record`, スナップショット対応 Projection への通知 | 外部公開（`IF-002`） |
 | F-103  | `StorageKernel.set_partition_status`                              | 親プロジェクト運用・管理機能 | `ShardLockManager` (`DBF-DD-004` `F-401`), `MetaDAOPort.set_partition_status`                                          |     同期      | 条件付き（`expected_status=None` 時） | `MetaDAOPort` の状態更新、ルーティングキャッシュ更新                  | 外部公開（`IF-006`） |
-| F-104  | `WritePipeline.prepare_and_hash`                                  | `F-101`, `F-102`             | `PayloadCodec.encode`, `hashlib.sha256`                                                                                |     同期      |           あり（純粋関数）            | なし（メモリ上の検証とハッシュ算出のみ）                              |         内部         |
-| F-105  | `WritePipeline.resolve_and_bind_partition`                        | `F-101`, `F-102`             | `MetaDAOPort.get_partition`, `PartitionRouterPort.select_shard`, `MetaDAOPort.bind_shard`                              |     同期      |   あり（`bind_shard` は冪等・不変）   | 未登録パーティションの `MetaDAOPort` 登録とキャッシュ格納             |         内部         |
-| F-106  | `SequenceCoordinator.allocate_and_verify`                         | `F-101`, `F-102`             | `ShardTxPort.next_sequence`                                                                                            |     同期      |   なし（呼び出しごとに `+1` 採番）    | トランザクション内での `PARTITION_SEQUENCE` 更新                      |         内部         |
+| F-104  | `WritePipeline.prepare_and_hash`                                  | `F-101`, `F-102`, `F-107`    | `PayloadCodec.encode`, `hashlib.sha256`                                                                                |     同期      |           あり（純粋関数）            | なし（メモリ上の検証とハッシュ算出のみ）                              |         内部         |
+| F-105  | `WritePipeline.resolve_and_bind_partition`                        | `F-101`, `F-102`, `F-107`    | `MetaDAOPort.get_partition`, `PartitionRouterPort.select_shard`, `MetaDAOPort.bind_shard`                              |     同期      |   あり（`bind_shard` は冪等・不変）   | 未登録パーティションの `MetaDAOPort` 登録とキャッシュ格納             |         内部         |
+| F-106  | `SequenceCoordinator.allocate_and_verify`                         | `F-101`, `F-102`, `F-107`    | `ShardTxPort.next_sequence`                                                                                            |     同期      |   なし（呼び出しごとに `+1` 採番）    | トランザクション内での `PARTITION_SEQUENCE` 更新                      |         内部         |
+| F-107  | `StorageKernel.append_batch` / `WritePipeline.execute_append_batch` | 親プロジェクト業務モジュール | `F-104`, `ShardLockManager`, `F-105`, `ShardDAOPort.write_transaction`, `F-106`, `EventDispatcher`, `ProjectionRunner` |     同期      | あり（同一冪等キー・同一ハッシュ時）  | `MetaDAOPort.bind_shard`, `ShardTxPort.insert_record`, 配信キュー投入 | 外部公開（`IF-011`） |
 
 ### 2.2 主要関数・機能の契約
 
@@ -124,6 +125,16 @@ related_documents:
 - **事後条件 (Post-conditions)**: 検証済みの `next_seq` を返す。`covers_through_seq` が不正（まだ存在しない未来の `seq` や `0` 以下）の場合は `ValueError` を送出してトランザクションをロールバックさせる。
 - **タイムアウト / キャンセル**: トランザクションコンテキストに従う。
 - **ログ・メトリクス・相関ID**: 連番逆転や不正 `covers_through_seq` 検出時にエラーログを記録する。
+
+#### 機能契約（機能ID: F-107 `append_batch` / `WritePipeline.execute_append_batch`）
+
+- **対象機能・関数名**: `StorageKernel.append_batch` → `WritePipeline.execute_append_batch`
+- **機能概要**: 単一パーティションに対する複数件の書き込み要求（`Sequence[BatchAppendItem[T]]`）を受け取り、ロック獲得前に全要素を `F-104` で事前検証・ハッシュ算出したうえで（空入力時は `()` を即時返却）、パーティションロックと `F-105` を経て **1 回の `write_transaction` 内** で各要素を順に処理する。トランザクション内ではバッチ内の一時辞書（`seen_in_batch`）と `find_by_idempotency` の双方で重複と `payload_hash` 一致を検査し、全件 COMMIT 完了後にのみ `status == "committed"` の分を `seq` 昇順で下流へ通知して `tuple[WriteAck[T], ...]` を返す。
+- **事前条件 (Pre-conditions)**: カーネルが稼働中（`RUNNING`）であり、`partition_key` が非空文字列であること。全要素が `F-101` の入力制約を満たすこと。
+- **事後条件 (Post-conditions)**: バッチ全体が 1 トランザクションで確定するか、途中の衝突・例外時は前段の挿入・採番を含め全件ロールバックされる。
+- **タイムアウト / キャンセル**: `F-101` と同一。
+- **ログ・メトリクス・相関ID**: COMMIT 確定後に各要素について `write.committed` / `write.duplicate` を記録する（`payload` 本体は出力しない）。
+- **外部公開時の互換性・認証**: 外部公開契約の詳細は [`DBF-IF-001`](./DBF-IF-001_IF仕様書.md) 4.1b 節（`IF-011`）を参照。
 
 ### 2.3 入力 DTO スキーマ・パラメータ仕様
 
@@ -313,6 +324,9 @@ sequenceDiagram
 | TR-DD1-006 | F-102 / F-106         | **手動スナップショットの `covers_through_seq` 境界検証**: `write_snapshot` の `covers_through_seq` がその時点の最終 `seq` を超える（または `0` 以下の）場合に拒否され、正常な範囲のときは `record_type="__snapshot__"` として保存されること（Issue #4）                     | 正常 / 境界 / 異常   | `tests/unit/test_ingestion.py::test_write_snapshot_covers_through_seq_validation`        |
 | TR-DD1-007 | F-101 / F-105         | **`bind_shard` 先行と Write-Before-ACK の順序保証**: 初回書き込み時に必ず `MetaDAOPort.bind_shard` が `ShardDAOPort.write_transaction` より先に呼ばれ、シャードの COMMIT が成功した後にのみ Event Bus への通知が行われること（COMMIT 失敗時は通知されないこと）（Issue #2） | 正常 / 異常 / 原子性 | `tests/unit/test_ingestion.py::test_bind_shard_precedes_write_and_write_before_ack`      |
 | TR-DD1-008 | F-101 / F-104         | **冪等再送時の重複配信抑止**: 同一 `(partition_key, idempotency_key, payload_hash)` で再送したとき、`WriteAck(status="duplicate")` で元の `seq` のレコードが返り、Event Bus への二重配信が行われないこと（Issue #2）                                                        | 正常 / 冪等性        | `tests/unit/test_ingestion.py::test_duplicate_write_returns_existing_without_redispatch` |
+| TR-DD1-009 | F-107 / F-106         | **`append_batch` の一括確定と順序通知**: 単一パーティションの複数件書き込みが 1 トランザクションで連番採番・永続化され、COMMIT 後にのみ `seq` 昇順で Event Bus 通知されること（Issue #64）                                                                                       | 正常 / 原子性 / 順序 | `tests/unit/test_ingestion.py::test_append_batch_commits_in_order_and_dispatches_events` |
+| TR-DD1-010 | F-107 / F-104         | **`append_batch` の事前検証失敗・衝突時全件ロールバック**: バッチ内の一部にサイズ超過・予約種別・版不一致、または途中要素での `IdempotencyConflict` がある場合、前段要素の挿入・採番を含め全件が確定しないこと（Issue #64）                                                   | 異常 / 原子性 / 境界 | `tests/unit/test_ingestion.py::test_append_batch_pre_validation_rejects_entire_batch` / `test_append_batch_rolls_back_entire_batch_on_conflict_with_sqlite` |
+| TR-DD1-011 | F-107 / F-104         | **`append_batch` の既存・バッチ内重複と空入力**: 既存 DB および同一バッチ内の同一 `idempotency_key`（同一ハッシュ）再送が `duplicate` となり再配信されず、空バッチは `()` を返すこと（Issue #64）                                                                            | 正常 / 冪等性 / 境界 | `tests/unit/test_ingestion.py::test_append_batch_handles_db_and_in_batch_duplicates` / `test_append_batch_empty_and_lifecycle_states` |
 
 ### 5.2 適用する品質ゲート
 
@@ -344,3 +358,4 @@ sequenceDiagram
 | :------ | :--------- | :----- | :------------------------------------------------------------------------------------------------------- |
 | Rev.1.0 | 2026-11-19 | xzyozi | 新規作成（Issue #15 に基づき書き込み経路 core/kernel, ingestion, ordering の詳細設計を制定）             |
 | Rev.1.1 | 2026-11-20 | xzyozi | v1.0.0 リリース準備に伴い、状態を `draft` から `approved` へ変更（実装・レビューを経て現在の正本とする） |
+| Rev.1.2 | 2026-11-28 | xzyozi | 同一パーティション向け一括書き込み `F-107`（`append_batch`）および `TR-DD1-009`〜`011` を追加（Issue #64） |

@@ -5,9 +5,9 @@ document_number: "DBF-IF-001"
 document_role: "normative"
 ssot_scope: "external_interface"
 status: "approved"
-version: "1.4"
+version: "1.5"
 created_at: "2026-11-19"
-updated_at: "2026-11-20"
+updated_at: "2026-11-28"
 author: "xzyozi"
 owner: "xzyozi"
 purpose: "親プロジェクトと storage_kernel のあいだで合意する外部インターフェース契約（公開API、Port/SPI、契約型・標準例外、互換性、および13項目のContract Test要件）を定義し、境界を越える受け渡しの不整合を防ぐため"
@@ -33,19 +33,19 @@ related_documents:
 ### 1.1 対象インターフェースの目的
 
 - **提供者 / 利用者**:
-  - **公開 API（`IF-001`〜`IF-010`）および契約型（`contracts/`）**: `storage_kernel` が提供し、親プロジェクト（別リポジトリのアプリケーション本体）が呼び出す。
+  - **公開 API（`IF-001`〜`IF-011`）および契約型（`contracts/`）**: `storage_kernel` が提供し、親プロジェクト（別リポジトリのアプリケーション本体）が呼び出す。
   - **Port / SPI（`IF-101`〜`IF-109`、`ports/`）**: `storage_kernel` が Protocol 契約を定義して呼び出し、親プロジェクト（または参照実装 `contrib/sqlite/`・テスト実装 `testing/memory_ports.py`）が実装して DI で注入する。
 - **連携の目的**: 親プロジェクト側のドメイン構造や物理 DB エンジン（SQLite / PostgreSQL / DuckDB 等）に一切依存せず、冪等書き込み、パーティション連番採番、Write-Before-ACK、2レーン配信（`subscribe` / `Projection`）、横断差分同期（`sync`）、スキーマ版移行（Upcast）、およびメンテナンス整合点制御を安全に連携するため。
 - **対象範囲**:
-  - `StorageKernel` が公開する 10 メソッドの契約（引数、戻り値、事前・事後条件、例外）。
+  - `StorageKernel` が公開する 11 メソッドの契約（引数、戻り値、事前・事後条件、例外）。
   - 親プロジェクトが実装する 9 つの Port（`ShardDAOPort`, `ShardTxPort`, `MetaDAOPort`, `ProjectionPort`, `DeadLetterPort`, `PayloadCodec`, `PayloadUpcaster`, `PartitionRouterPort`, `MaintenanceHooks`）のメソッド契約と不変条件。
-  - 境界を越えて受け渡す契約データ型（`RecordEnvelope[T]`, `WriteAck[T]`, `PartitionInfo`, `KernelConfig`, `RetryPolicy`, `DeadLetterRecord[T]`, `ShutdownReport`, `SubscriptionHandle`）および標準例外体系（`contracts/errors.py`）。
+  - 境界を越えて受け渡す契約データ型（`RecordEnvelope[T]`, `BatchAppendItem[T]`, `WriteAck[T]`, `PartitionInfo`, `KernelConfig`, `RetryPolicy`, `DeadLetterRecord[T]`, `ShutdownReport`, `SubscriptionHandle`）および標準例外体系（`contracts/errors.py`）。
   - 親プロジェクトの DAO / Codec / Projection 実装が満たすべき 13 項目の外部契約テスト要件（`TR-IF-001`〜`TR-IF-013`）。
   - セマンティックバージョニング方針と将来予約済みの拡張口。
 - **対象外**:
   - `core/`・`runtime/` 内部の制御フロー、スレッド・ロック管理、内部キュー・Dirty Set 構造（詳細設計書 `DBF-DD-001`〜`004` の正本）。
   - ストレージ上の論理・物理保存スキーマ、原子書き込み、バックアップ対象（データ構造仕様書 `DBF-DS-001` の正本）。
-  - v2 以降に先送りした `append_batch`、パーティション移動（`Migratable*Port`）、大容量退避（`BlobStorePort`）、揮発ストア（`ephemeral`）、アクセス制御（`guard`）、IPC 配信口（`ports/transport.py`）の具象定義。
+  - v2 以降に先送りしたパーティション移動（`Migratable*Port`）、大容量退避（`BlobStorePort`）、自動スナップショット・Retention、揮発ストア（`ephemeral`）、アクセス制御（`guard`）、IPC 配信口（`ports/transport.py`）の具象定義。
 
 ### 1.2 単一責任範囲 (SSOT) と文書境界
 
@@ -68,6 +68,7 @@ related_documents:
 | IF-ID  | インターフェース名                   | 方向 | 方式                                               | 相手先                               | 対応するDD機能ID                                | 状態       |
 | :----- | :----------------------------------- | :--- | :------------------------------------------------- | :----------------------------------- | :---------------------------------------------- | :--------- |
 | IF-001 | `StorageKernel.append`               | 提供 | インプロセス関数呼び出し（同期）                   | 親プロジェクト業務モジュール         | `DBF-DD-001` (`F-101`)                          | 計画（v1） |
+| IF-011 | `StorageKernel.append_batch`         | 提供 | インプロセス関数呼び出し（同期）                   | 親プロジェクト業務モジュール         | `DBF-DD-001` (`F-107`)                          | 実装済み（Issue #64） |
 | IF-002 | `StorageKernel.write_snapshot`       | 提供 | インプロセス関数呼び出し（同期）                   | 親プロジェクト業務モジュール         | `DBF-DD-001` (`F-102`)                          | 計画（v1） |
 | IF-003 | `StorageKernel.subscribe`            | 提供 | インプロセス関数呼び出し（非同期コールバック登録） | 親プロジェクト購読モジュール         | `DBF-DD-002` (`F-201`)                          | 計画（v1） |
 | IF-004 | `StorageKernel.register_projection`  | 提供 | インプロセス関数呼び出し（非同期ワーカー登録）     | 親プロジェクト Composition Root      | `DBF-DD-002` (`F-202`)                          | 計画（v1） |
@@ -144,6 +145,10 @@ related_documents:
 | `KernelConfig`            | `schema_registry`               | `dict[str, int]`                                      |  必須  |  不可  | `record_type` ごとの最新 `schema_version` マップ                                                                                  |
 | `KernelConfig`            | `max_payload_bytes`             | `int`                                                 |  任意  |  不可  | エンコード後ペイロードの最大バイト数（既定値 `65536` = 64 KB）                                                                    |
 | `KernelConfig`            | `default_retry_policy`          | `RetryPolicy`                                         |  任意  |  不可  | Projection の既定リトライポリシー（既定値 `RetryPolicy()`）                                                                       |
+| `BatchAppendItem[T]`      | `record_type`                   | `str`                                                 |  必須  |  不可  | 追記するレコード種別（`"__"` で始まらないこと）                                                                                   |
+| `BatchAppendItem[T]`      | `payload`                       | `T`                                                   |  必須  |   可   | ドメインペイロード本体（エンコード後 `max_payload_bytes` 以下）                                                                   |
+| `BatchAppendItem[T]`      | `idempotency_key`               | `str`                                                 |  必須  |  不可  | 呼び出し元指定の非空冪等キー                                                                                                      |
+| `BatchAppendItem[T]`      | `schema_version`                | `int`                                                 |  必須  |  不可  | `KernelConfig.schema_registry[record_type]` と一致する正の整数                                                                    |
 | `WriteAck[T]`             | `status`                        | `Literal["committed", "duplicate"]`                   |  必須  |  不可  | 新規書き込み確定時は `"committed"`、冪等再送ヒット時は `"duplicate"`                                                              |
 | `WriteAck[T]`             | `shard_id`                      | `str`                                                 |  必須  |  不可  | 保存先シャード識別子                                                                                                              |
 | `WriteAck[T]`             | `envelope`                      | `RecordEnvelope[T]`                                   |  必須  |  不可  | 確定または既存ヒットしたレコード封筒                                                                                              |
@@ -280,6 +285,38 @@ related_documents:
 | `PayloadTooLarge`         | エンコード後バイト数が `max_payload_bytes`（64 KB）を超過                        | 例外送出 | ペイロードを分割または縮小する                                            | 不可       |
 | `PartitionReadOnlyError`  | 対象パーティションの `status` が `"read_only"`                                   | 例外送出 | 書き込み不可として処理するか、`set_partition_status` で `"active"` に戻す | 条件付き   |
 | `IdempotencyConflict`     | 同じ `(partition_key, idempotency_key)` で `payload_hash` が既存レコードと異なる | 例外送出 | 冪等キーの使い回しバグを修正し、新規 `idempotency_key` を発行する         | 不可       |
+
+---
+
+### 4.1b 契約（IF-ID: IF-011 `StorageKernel.append_batch`）
+
+- **概要**: 指定した単一パーティションへ複数の通常レコード（`BatchAppendItem[T]` の列）を、1 回の `ShardDAOPort.write_transaction` 内で原子的に冪等追記する。
+- **呼び出し方式**: `kernel.append_batch(partition_key, items, *, preferred_shard=None) -> tuple[WriteAck[T], ...]`
+- **冪等性**: あり。既存 DB および同一バッチ内の `(partition_key, idempotency_key)` を検査し、同一 `payload_hash` なら `seq` を進めず `status="duplicate"` として既存／初回確定の `RecordEnvelope[T]` を返す（Event Bus・Projection への再配信は行わない）。
+- **事前条件 / 事後条件**:
+  - **事前条件**: カーネルが `close()` されておらず、メンテナンスモード中でもないこと。`partition_key` が非空文字列であること。`items` の全要素が `append` と同じ入力契約（`"__"` 非開始、`schema_registry` 最新版一致、エンコード後 `max_payload_bytes` 以下）を満たすこと。
+  - **事後条件**:
+    - `items` が空の場合は DB や `bind_shard` に触れず空タプル `()` を返す。
+    - 非空時は `MetaDAOPort.bind_shard` が先に確定し、全要素が単一の `write_transaction` 内で COMMIT された後に `items` と同じ順序の `tuple[WriteAck[T], ...]` を返す。途中の要素で `IdempotencyConflict` や DB 例外が発生した場合はトランザクション全体がロールバックされ、前段の挿入・採番もすべて巻き戻る（イベント通知も行わない）。
+    - `status == "committed"` の要素のみ、`seq` 昇順で Event Bus と Projection へ通知される。
+
+#### 4.1b.1 リクエスト / 引数
+
+| パラメータ        | データ型                       |         必須性         | NULL可 | バリデーション・制約                                                                             | 例・備考                         |
+| :---------------- | :----------------------------- | :--------------------: | :----: | :----------------------------------------------------------------------------------------------- | :------------------------------- |
+| `partition_key`   | `str`                          |          必須          |  不可  | 非空文字列                                                                                       | `"order:usdjpy"`                 |
+| `items`           | `Sequence[BatchAppendItem[T]]` |          必須          |  不可  | 0 件以上の `BatchAppendItem[T]`。各要素の制約は `IF-001` の対応引数と同一                        | `[BatchAppendItem(...)]`         |
+| `preferred_shard` | `str \| None`                  | 任意（キーワード専用） |   可   | 未登録パーティションの初回 `bind_shard` 時にのみ `PartitionRouterPort.select_shard` へ渡すヒント | `"shard_heavy"`（既定値 `None`） |
+
+#### 4.1b.2 レスポンス / 戻り値
+
+| フィールド     | データ型                 | 必須性 | NULL可 | 意味・取り得る値                                                                     |
+| :------------- | :----------------------- | :----: | :----: | :----------------------------------------------------------------------------------- |
+| （戻り値全体） | `tuple[WriteAck[T], ...]` |  必須  |  不可  | 入力 `items` の各要素に 1 対 1 で対応する `WriteAck[T]` のタプル（空入力時は `()`） |
+
+#### 4.1b.3 エラー応答
+
+- `KernelClosedError`、`KernelMaintenanceError`、`ReservedRecordTypeError`、`SchemaVersionError`、`PayloadTooLarge`、`PartitionReadOnlyError`、`IdempotencyConflict`、`ValueError`（すべて `IF-001` と同一。事前検証エラー時は 1 件目も含め DB へ書き込まず、トランザクション内エラー時は全件ロールバックする）。
 
 ---
 
@@ -646,3 +683,4 @@ related_documents:
 | Rev.1.2 | 2026-11-20 | xzyozi | Contract Test の表を実装と同じ強さに改訂（Issue #38）。TR-IF-010 に `projected_seqs` フックを追加し、TR-IF-002 のスキップ条件を shard/meta 別に分離、TR-IF-003〜005 の基準を強化          |
 | Rev.1.3 | 2026-11-20 | xzyozi | v1.0.0 リリース準備に伴い、状態を `draft` から `approved` へ変更（実装・レビューを経て現在の正本とする）                                                                                  |
 | Rev.1.4 | 2026-11-20 | xzyozi | §2.5.1 を追加し、ペイロードの型・`codec`・`store_raw_bytes` の組み合わせ（3 種）と選び方、注意点を明記（Issue #54 の判断: 現状維持）。                                                    |
+| Rev.1.5 | 2026-11-28 | xzyozi | 同一パーティション向け一括書き込み API `IF-011`（`StorageKernel.append_batch`）および契約型 `BatchAppendItem[T]` を追加（Issue #64）                                                      |
